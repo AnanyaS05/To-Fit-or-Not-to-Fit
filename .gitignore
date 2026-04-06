@@ -1,0 +1,6 @@
+Data/*
+!Data/demo_brand_sizing.csv
+.venv/
+artifacts/
+__pycache__/
+*.pyc
