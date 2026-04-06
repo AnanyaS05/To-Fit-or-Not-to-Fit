@@ -22,9 +22,17 @@ python scripts/train_manual_numpy_mlp.py --dataset both --task binary_misfit --e
 Bayesian cold-start flow:
 
 ```powershell
-python scripts/train_cold_start_mlp.py --sample-frac-modcloth 0.25 --sample-frac-rtr 0.25 --epochs 8
-Rscript scripts/train_brms_calibrator.R --input artifacts/cold_start/mlp_calibration_predictions.csv --output_model artifacts/cold_start/bayesian_mlp_calibrator_rstan.rds
+python scripts/train_cold_start_mlp.py --epochs 25 --hidden-dims 256 128 --dropout 0.15
+Rscript scripts/train_brms_calibrator.R --input artifacts/cold_start/mlp_calibration_predictions.csv --output_model artifacts/cold_start/bayesian_mlp_calibrator_rstan.rds --model-type warning_direction --formula-preset compact --weighting balanced --max-rows 10000 --chains 2 --iter 2000 --warmup 1000
 python scripts/predict_cold_start_fit.py --garment-type dresses --selected-size M --height-inches 65 --bust 36 --waist 28 --hips 38
+```
+
+Faster development run:
+
+```powershell
+python scripts/train_cold_start_mlp.py --sample-frac-modcloth 0.10 --sample-frac-rtr 0.10 --epochs 20 --hidden-dims 256 128 --dropout 0.15 --output-dir artifacts/cold_start_tuned
+Rscript scripts/train_brms_calibrator.R --input artifacts/cold_start_tuned/mlp_calibration_predictions.csv --output_model artifacts/cold_start_tuned/bayesian_mlp_calibrator_rstan.rds --model-type warning_direction --formula-preset compact --weighting balanced --chains 2 --iter 500 --warmup 250
+python scripts/predict_cold_start_fit.py --artifact-dir artifacts/cold_start_tuned --garment-type dresses --selected-size M --height-inches 65 --bust 36 --waist 28 --hips 38
 ```
 
 Use `--calibrator-model path\to\model.rds` with `predict_cold_start_fit.py` if you want to score with a calibrator file outside the artifact directory.
@@ -49,10 +57,13 @@ What the Bayesian cold-start flow does:
 - maps raw numeric source sizes into demo labels `XS`, `S`, `M`, `L`, and `XL`
 - joins reviews to the demo size chart and converts measurements into gaps from the selected size
 - trains a from-scratch NumPy MLP to predict `small`, `fit`, or `large`
-- trains a `brms` categorical calibration model with `backend = "rstan"` on held-out MLP predictions
+- trains a `brms`/`rstan` Bayesian calibration model on held-out MLP predictions
+- defaults to the warning-direction calibrator: one Bayesian Bernoulli model estimates `P(misfit)` and another estimates `P(large | misfit)`, then the system reconstructs `P(small)`, `P(fit)`, and `P(large)`
+- supports the original categorical model with `--model-type categorical`
 - scores all demo sizes and warns only when calibrated `P(small) + P(large) >= 0.70`
 
 Notes:
 - The MLP model code uses NumPy/Pandas and local metrics instead of pre-built ML models.
 - R requires `brms`, `rstan`, `posterior`, `jsonlite`, `rmarkdown`, `knitr`, and a working Rtools toolchain on Windows.
 - Quick R verification: `Rscript -e "library(rstan); library(brms); cat(Sys.which('make'), Sys.which('g++'), sep='\n')"`
+- The final full Bayesian run should use more iterations than the fast development run. If `rstan` reports low ESS or high R-hat, increase `--iter` and `--warmup`.

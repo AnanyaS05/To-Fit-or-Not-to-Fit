@@ -24,6 +24,9 @@ from to_fit_or_not_to_fit.manual_mlp import ManualMLPClassifier  # noqa: E402
 from to_fit_or_not_to_fit.metrics import accuracy_score, macro_f1_score  # noqa: E402
 
 
+WARNING_THRESHOLD = 0.70
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Validate cold-start MLP and Bayesian calibration artifacts.",
@@ -37,6 +40,24 @@ def parse_args() -> argparse.Namespace:
         help="Optional output JSON from score_brms_calibrator.R for mlp_test_predictions.csv.",
     )
     return parser.parse_args()
+
+
+def log_loss(y_true: np.ndarray, probabilities: np.ndarray) -> float:
+    clipped = np.clip(probabilities, 1e-12, 1.0)
+    return float(-np.mean(np.log(clipped[np.arange(len(y_true)), y_true])))
+
+
+def multiclass_brier(y_true: np.ndarray, probabilities: np.ndarray) -> float:
+    one_hot = np.eye(probabilities.shape[1], dtype=float)[y_true]
+    return float(np.mean(np.sum((probabilities - one_hot) ** 2, axis=1)))
+
+
+def per_class_recall(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
+    recalls: dict[str, float] = {}
+    for idx, class_name in enumerate(CLASS_NAMES):
+        mask = y_true == idx
+        recalls[class_name] = float(np.mean(y_pred[mask] == idx)) if mask.any() else float("nan")
+    return recalls
 
 
 def require_file(path: Path) -> None:
@@ -83,6 +104,9 @@ def validate_mlp_predictions(frame: pd.DataFrame, split_name: str) -> dict[str, 
         "max_probability_sum_error": max_sum_error,
         "accuracy": float(accuracy_score(y_true, y_pred)),
         "macro_f1": float(macro_f1_score(y_true, y_pred, labels=np.arange(len(CLASS_NAMES)))),
+        "log_loss": log_loss(y_true, probabilities),
+        "brier": multiclass_brier(y_true, probabilities),
+        "per_class_recall": per_class_recall(y_true, y_pred),
     }
 
 
@@ -106,7 +130,7 @@ def validate_calibrated_predictions(
     y_pred = probabilities.argmax(axis=1)
     misfit_true = test_frame["fit_label"].ne("fit").to_numpy()
     misfit_probabilities = probabilities[:, 0] + probabilities[:, 2]
-    warning_mask = misfit_probabilities >= 0.70
+    warning_mask = misfit_probabilities >= WARNING_THRESHOLD
 
     warning_precision = (
         float(misfit_true[warning_mask].mean()) if warning_mask.any() else float("nan")
@@ -114,16 +138,31 @@ def validate_calibrated_predictions(
     warning_recall = (
         float(warning_mask[misfit_true].mean()) if misfit_true.any() else float("nan")
     )
+    warning_direction = np.where(probabilities[:, 0] >= probabilities[:, 2], "small", "large")
+    true_labels = test_frame["fit_label"].to_numpy(dtype=str)
+    true_misfit_warning = warning_mask & misfit_true
+    warning_direction_accuracy = (
+        float(np.mean(warning_direction[true_misfit_warning] == true_labels[true_misfit_warning]))
+        if true_misfit_warning.any()
+        else float("nan")
+    )
 
     return {
         "rows": float(len(rows)),
         "max_probability_sum_error": max_sum_error,
         "accuracy": float(accuracy_score(y_true, y_pred)),
         "macro_f1": float(macro_f1_score(y_true, y_pred, labels=np.arange(len(CLASS_NAMES)))),
+        "log_loss": log_loss(y_true, probabilities),
+        "brier": multiclass_brier(y_true, probabilities),
+        "per_class_recall": per_class_recall(y_true, y_pred),
         "warning_count_at_0.70": float(warning_mask.sum()),
         "warning_rate_at_0.70": float(warning_mask.mean()),
         "warning_precision_at_0.70": warning_precision,
         "warning_recall_at_0.70": warning_recall,
+        "warning_direction_accuracy_at_0.70": warning_direction_accuracy,
+        "misfit_probability_min": float(misfit_probabilities.min()),
+        "misfit_probability_mean": float(misfit_probabilities.mean()),
+        "misfit_probability_max": float(misfit_probabilities.max()),
     }
 
 

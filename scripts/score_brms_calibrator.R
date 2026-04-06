@@ -1,3 +1,9 @@
+ # Score candidate DemoFit Co sizes with the saved Bayesian calibrator.
+ #
+ # This supports both saved model formats:
+ # - a single brms categorical model
+ # - the default warning-direction bundle with misfit and direction models
+
 parse_named_args <- function(args, defaults) {
   parsed <- defaults
   idx <- 1L
@@ -11,7 +17,7 @@ parse_named_args <- function(args, defaults) {
       stop(sprintf("Missing value for argument: %s", key), call. = FALSE)
     }
 
-    parsed[[sub("^--", "", key)]] <- args[[idx + 1L]]
+    parsed[[gsub("-", "_", sub("^--", "", key))]] <- args[[idx + 1L]]
     idx <- idx + 2L
   }
 
@@ -39,17 +45,47 @@ candidate_df$source <- factor(candidate_df$source, levels = c("modcloth", "rentt
 candidate_df$garment_type <- factor(candidate_df$garment_type, levels = c("tops", "bottoms", "dresses"))
 candidate_df$selected_size_label <- factor(candidate_df$selected_size_label, levels = c("XS", "S", "M", "L", "XL"))
 candidate_df$fit_label <- factor("fit", levels = c("small", "fit", "large"))
-
-epred <- brms::posterior_epred(model, newdata = candidate_df)
-category_names <- dimnames(epred)[[3]]
-if (is.null(category_names)) {
-  category_names <- c("small", "fit", "large")
+if (!"calibration_weight" %in% names(candidate_df)) {
+  candidate_df$calibration_weight <- 1.0
 }
-category_names <- sub("^mu", "", category_names)
-category_names <- sub("^P\\.", "", category_names)
+if (!"misfit_weight" %in% names(candidate_df)) {
+  candidate_df$misfit_weight <- 1.0
+}
+if (!"direction_weight" %in% names(candidate_df)) {
+  candidate_df$direction_weight <- 1.0
+}
+candidate_df$misfit_label <- 0L
+candidate_df$large_label <- 0L
 
-mean_probs <- apply(epred, c(2, 3), mean)
-colnames(mean_probs) <- category_names
+is_warning_direction <- is.list(model) &&
+  !is.null(model$model_type) &&
+  identical(model$model_type, "warning_direction")
+
+if (is_warning_direction) {
+  # Convert the two Bernoulli posterior means back into the three class probabilities
+  # expected by the Python CLI.
+  misfit_epred <- brms::posterior_epred(model$misfit_model, newdata = candidate_df)
+  direction_epred <- brms::posterior_epred(model$direction_model, newdata = candidate_df)
+
+  p_misfit <- colMeans(misfit_epred)
+  p_large_given_misfit <- colMeans(direction_epred)
+  mean_probs <- cbind(
+    small = p_misfit * (1.0 - p_large_given_misfit),
+    fit = 1.0 - p_misfit,
+    large = p_misfit * p_large_given_misfit
+  )
+} else {
+  epred <- brms::posterior_epred(model, newdata = candidate_df)
+  category_names <- dimnames(epred)[[3]]
+  if (is.null(category_names)) {
+    category_names <- c("small", "fit", "large")
+  }
+  category_names <- sub("^mu", "", category_names)
+  category_names <- sub("^P\\.", "", category_names)
+
+  mean_probs <- apply(epred, c(2, 3), mean)
+  colnames(mean_probs) <- category_names
+}
 
 result <- cbind(
   candidate_df[c("source", "garment_type", "selected_size_label")],
