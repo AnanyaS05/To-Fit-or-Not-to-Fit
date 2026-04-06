@@ -1,0 +1,16 @@
+brand,garment_type,size_label,size_order,bust_min,bust_max,waist_min,waist_max,hips_min,hips_max,height_min_inches,height_max_inches
+DemoFit Co,tops,XS,1,31,33,24,26,34,36,60,66
+DemoFit Co,tops,S,2,33,35,26,28,36,38,61,67
+DemoFit Co,tops,M,3,35,37,28,30,38,40,62,68
+DemoFit Co,tops,L,4,37,40,30,33,40,43,63,69
+DemoFit Co,tops,XL,5,40,43,33,36,43,46,64,70
+DemoFit Co,bottoms,XS,1,31,33,24,26,34,36,60,66
+DemoFit Co,bottoms,S,2,33,35,26,28,36,38,61,67
+DemoFit Co,bottoms,M,3,35,37,28,30,38,40,62,68
+DemoFit Co,bottoms,L,4,37,40,30,33,40,43,63,69
+DemoFit Co,bottoms,XL,5,40,43,33,36,43,46,64,70
+DemoFit Co,dresses,XS,1,31,33,24,26,34,36,60,66
+DemoFit Co,dresses,S,2,33,35,26,28,36,38,61,67
+DemoFit Co,dresses,M,3,35,37,28,30,38,40,62,68
+DemoFit Co,dresses,L,4,37,40,30,33,40,43,63,69
+DemoFit Co,dresses,XL,5,40,43,33,36,43,46,64,70
