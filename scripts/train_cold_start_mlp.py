@@ -32,8 +32,8 @@ from to_fit_or_not_to_fit.metrics import (  # noqa: E402
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Train the cold-start DemoFit Co MLP and export held-out predictions "
-            "for Bayesian calibration in R."
+            "Train the cold-start DemoFit Co MLP and export row-aligned split "
+            "artifacts for Bayesian comparison in R."
         )
     )
     parser.add_argument("--modcloth-json", type=Path, default=ROOT / "Data" / "modcloth_final_data.json")
@@ -51,6 +51,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sample-frac-rtr", type=float, default=1.0)
     parser.add_argument("--calib-size", type=float, default=0.20)
     parser.add_argument("--test-size", type=float, default=0.20)
+    parser.add_argument(
+        "--class-weighting",
+        choices=["none", "balanced", "sqrt_balanced"],
+        default="balanced",
+        help="How to weight fit classes during MLP training.",
+    )
+    parser.add_argument(
+        "--export-only",
+        action="store_true",
+        help="Export row-aligned split artifacts without training the MLP.",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--quiet", action="store_true")
     return parser.parse_args()
@@ -63,6 +74,23 @@ def add_probability_columns(frame: pd.DataFrame, probabilities: np.ndarray) -> p
         output[f"mlp_p_{class_name}"] = probabilities[:, idx]
         output[f"mlp_logit_{class_name}"] = np.log(clipped)
     return output
+
+
+def export_split_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    split_columns = ["row_id", "fit_label", *FEATURE_COLUMNS]
+    return frame.loc[:, split_columns].copy()
+
+
+def build_class_weights(y_train: np.ndarray, num_classes: int, mode: str) -> np.ndarray | None:
+    if mode == "none":
+        return None
+
+    counts = np.bincount(y_train, minlength=num_classes).astype(np.float32)
+    safe_counts = np.where(counts == 0, 1.0, counts)
+    weights = counts.sum() / (num_classes * safe_counts)
+    if mode == "sqrt_balanced":
+        weights = np.sqrt(weights)
+    return (weights / np.mean(weights)).astype(np.float32)
 
 
 def evaluate_split(
@@ -105,6 +133,8 @@ def main() -> None:
         sample_frac_rtr=args.sample_frac_rtr,
         seed=args.seed,
     )
+    training_frame = training_frame.reset_index(drop=True)
+    training_frame.insert(0, "row_id", np.arange(len(training_frame), dtype=np.int64))
     training_frame.to_csv(args.output_dir / "cold_start_training_table.csv", index=False)
     size_mapping.to_csv(args.output_dir / "size_label_mapping.csv", index=False)
 
@@ -118,6 +148,10 @@ def main() -> None:
     calib_df = training_frame.iloc[calib_idx].reset_index(drop=True)
     test_df = training_frame.iloc[test_idx].reset_index(drop=True)
 
+    export_split_frame(train_df).to_csv(args.output_dir / "train_split.csv", index=False)
+    export_split_frame(calib_df).to_csv(args.output_dir / "calibration_split.csv", index=False)
+    export_split_frame(test_df).to_csv(args.output_dir / "test_split.csv", index=False)
+
     preprocessor = fit_preprocessor(train_df)
     preprocessor.to_json(args.output_dir / "preprocessor.json")
 
@@ -127,6 +161,30 @@ def main() -> None:
     y_train = encode_labels(train_df["fit_label"])
     y_calib = encode_labels(calib_df["fit_label"])
     y_test = encode_labels(test_df["fit_label"])
+
+    metadata: dict[str, object] = {
+        "class_names": CLASS_NAMES,
+        "feature_names": preprocessor.feature_names,
+        "feature_columns": FEATURE_COLUMNS,
+        "class_weighting": args.class_weighting,
+        "paths": {
+            "preprocessor": str(args.output_dir / "preprocessor.json"),
+            "train_split": str(args.output_dir / "train_split.csv"),
+            "calibration_split": str(args.output_dir / "calibration_split.csv"),
+            "test_split": str(args.output_dir / "test_split.csv"),
+            "size_mapping": str(args.output_dir / "size_label_mapping.csv"),
+        },
+    }
+
+    if args.export_only:
+        metadata["export_only"] = True
+        (args.output_dir / "mlp_metadata.json").write_text(
+            json.dumps(metadata, indent=2),
+            encoding="utf-8",
+        )
+        print("\nExported split artifacts to:")
+        print(args.output_dir)
+        return
 
     config = ManualMLPConfig(
         hidden_dims=tuple(args.hidden_dims),
@@ -143,6 +201,7 @@ def main() -> None:
         input_dim=X_train.shape[1],
         num_classes=len(CLASS_NAMES),
         config=config,
+        class_weights=build_class_weights(y_train, len(CLASS_NAMES), args.class_weighting),
         class_names=CLASS_NAMES,
     )
 
@@ -165,21 +224,20 @@ def main() -> None:
     calib_export.to_csv(args.output_dir / "mlp_calibration_predictions.csv", index=False)
     test_export.to_csv(args.output_dir / "mlp_test_predictions.csv", index=False)
 
-    metadata = {
-        "class_names": CLASS_NAMES,
-        "feature_names": preprocessor.feature_names,
-        "feature_columns": FEATURE_COLUMNS,
-        "history": history,
-        "calibration_metrics": calib_metrics,
-        "test_metrics": test_metrics,
-        "paths": {
+    metadata.update(
+        {
+            "history": history,
+            "calibration_metrics": calib_metrics,
+            "test_metrics": test_metrics,
+        }
+    )
+    metadata["paths"].update(
+        {
             "model": str(args.output_dir / "manual_mlp_model.npz"),
-            "preprocessor": str(args.output_dir / "preprocessor.json"),
             "calibration_predictions": str(args.output_dir / "mlp_calibration_predictions.csv"),
             "test_predictions": str(args.output_dir / "mlp_test_predictions.csv"),
-            "size_mapping": str(args.output_dir / "size_label_mapping.csv"),
-        },
-    }
+        }
+    )
     (args.output_dir / "mlp_metadata.json").write_text(
         json.dumps(metadata, indent=2),
         encoding="utf-8",
