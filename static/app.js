@@ -17,6 +17,13 @@
     return value.toFixed(3);
   }
 
+  const PALETTE = {
+    wine: "#7F82B7",
+    burgundy: "#949AC3",
+    rose: "#A7ADD0",
+    sand: "#E9E0CF",
+  };
+
   function renderVisualizationPage() {
     const cvRows = parseJsonScript("cv-rows-json") || [];
     const mlpCvRows = parseJsonScript("mlp-cv-rows-json") || [];
@@ -196,7 +203,12 @@
             z: matrix,
             x: xLabels,
             y: yLabels,
-            colorscale: "Blues",
+            colorscale: [
+              [0.0, PALETTE.sand],
+              [0.45, PALETTE.rose],
+              [0.75, PALETTE.burgundy],
+              [1.0, PALETTE.wine],
+            ],
           },
         ],
         {
@@ -224,16 +236,16 @@
               y: acc,
               mode: "lines+markers",
               name: "Accuracy",
-              marker: { color: "#0f7c6e" },
-              line: { color: "#0f7c6e", width: 3 },
+              marker: { color: PALETTE.wine },
+              line: { color: PALETTE.wine, width: 3 },
             },
             {
               x: folds,
               y: macroF1,
               mode: "lines+markers",
               name: "Macro F1",
-              marker: { color: "#f59f66" },
-              line: { color: "#f59f66", width: 3 },
+              marker: { color: PALETTE.rose },
+              line: { color: PALETTE.rose, width: 3 },
             },
           ];
 
@@ -265,7 +277,7 @@
               values,
               hole: 0.42,
               marker: {
-                colors: ["#117a6d", "#f59f66", "#6ca0dc", "#9ac57d", "#d88bc8"],
+                colors: [PALETTE.wine, PALETTE.burgundy, PALETTE.rose, PALETTE.sand],
               },
               textinfo: "label+percent",
             },
@@ -283,19 +295,19 @@
         }
       }
 
-      renderSummaryBar("bayes-summary-chart", bayesSummary, "Bayesian Test Metrics", "#f59f66");
-      renderSummaryBar("mlp-summary-chart", mlpSummary, "MLP Test Metrics", "#0f7c6e");
+      renderSummaryBar("bayes-summary-chart", bayesSummary, "Bayesian Test Metrics", PALETTE.wine);
+      renderSummaryBar("mlp-summary-chart", mlpSummary, "MLP Test Metrics", PALETTE.burgundy);
 
       renderPerClassF1(
         "bayes-per-class-chart",
         bayesPerClass,
-        "#f2a66e",
+        PALETTE.rose,
         "No Bayesian per-class metrics available."
       );
       renderPerClassF1(
         "mlp-per-class-chart",
         mlpPerClass,
-        "#2c9c8f",
+        PALETTE.sand,
         "No MLP per-class metrics available."
       );
 
@@ -325,14 +337,14 @@
                 name: "Bayesian",
                 x: metrics,
                 y: bayesValues,
-                marker: { color: "#f59f66" },
+                marker: { color: PALETTE.wine },
               },
               {
                 type: "bar",
                 name: "MLP",
                 x: metrics,
                 y: mlpValues,
-                marker: { color: "#0f7c6e" },
+                marker: { color: PALETTE.burgundy },
               },
             ],
             {
@@ -460,21 +472,25 @@
       byType[key].push(row);
     });
 
-    const traces = Object.entries(byType).map(([garmentType, rows]) => {
+    const traces = Object.entries(byType).map(([garmentType, rows], idx) => {
       const ordered = [...rows].sort((a, b) => a.size_order - b.size_order);
       const x = ordered.map((r) => r.size_label);
       const yCenter = ordered.map((r) => (r.hips_min + r.hips_max) / 2);
       const yHalfRange = ordered.map((r) => (r.hips_max - r.hips_min) / 2);
+      const traceColor = [PALETTE.wine, PALETTE.burgundy, PALETTE.rose, PALETTE.sand][idx % 4];
 
       return {
         x,
         y: yCenter,
         mode: "lines+markers",
         name: garmentType,
+        marker: { color: traceColor },
+        line: { color: traceColor, width: 3 },
         error_y: {
           type: "data",
           array: yHalfRange,
           visible: true,
+          color: traceColor,
         },
       };
     });

@@ -1,13 +1,13 @@
 :root {
-  --bg: #f4f6f2;
-  --surface: #ffffff;
-  --ink: #1d2a2a;
-  --muted: #5a6a67;
-  --accent: #0f7c6e;
-  --accent-soft: #d4efe8;
-  --sun: #f59f66;
-  --border: #d9e4df;
-  --shadow: 0 18px 40px rgba(23, 46, 42, 0.12);
+  --bg: #e9e0cf;
+  --surface: #f7f4ec;
+  --ink: #40456a;
+  --muted: #5a618b;
+  --accent: #7f82b7;
+  --accent-soft: #a7add0;
+  --sun: #949ac3;
+  --border: #cfd3e5;
+  --shadow: 0 12px 28px rgba(64, 69, 106, 0.12);
 }
 
 * {
@@ -18,24 +18,20 @@ body {
   margin: 0;
   font-family: "Space Grotesk", "Segoe UI", sans-serif;
   color: var(--ink);
-  background: radial-gradient(circle at 12% 12%, #e9f7f2 0%, transparent 32%),
-    radial-gradient(circle at 86% 18%, #ffe6d6 0%, transparent 35%), var(--bg);
+  background: var(--bg);
   min-height: 100vh;
   line-height: 1.5;
 }
 
 .ambient {
-  position: fixed;
-  z-index: -1;
-  filter: blur(24px);
-  opacity: 0.34;
+  display: none;
 }
 
 .ambient-a {
   width: 240px;
   height: 240px;
   border-radius: 45% 55% 62% 38%;
-  background: #9edecf;
+  background: #7f82b7;
   top: 8vh;
   right: 8vw;
   animation: drift 9s ease-in-out infinite;
@@ -45,7 +41,7 @@ body {
   width: 300px;
   height: 300px;
   border-radius: 60% 40% 35% 65%;
-  background: #ffd7b9;
+  background: #a7add0;
   left: -60px;
   bottom: -60px;
   animation: drift 11s ease-in-out infinite reverse;
@@ -95,7 +91,7 @@ body {
 
 .site-nav a:hover {
   background: var(--accent-soft);
-  border-color: #b3ddd0;
+  border-color: #7f82b766;
 }
 
 .page-shell {
@@ -106,7 +102,7 @@ body {
 }
 
 .card {
-  background: color-mix(in srgb, var(--surface) 92%, #f8fbfa 8%);
+  background: color-mix(in srgb, var(--surface) 92%, var(--bg) 8%);
   border: 1px solid var(--border);
   border-radius: 20px;
   box-shadow: var(--shadow);
@@ -162,8 +158,8 @@ body {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--accent), #139b8a);
-  color: #f8fffd;
+  background: var(--accent);
+  color: #f8f9ff;
 }
 
 .btn-primary:hover {
@@ -171,9 +167,9 @@ body {
 }
 
 .btn-ghost {
-  border-color: #b8ccc8;
+  border-color: #7f82b766;
   color: var(--ink);
-  background: #ffffffaa;
+  background: #a7add04d;
 }
 
 .grid {
@@ -217,18 +213,18 @@ body {
 }
 
 .stat-card {
-  border-top: 4px solid #b9e4d8;
+  border-top: 4px solid #949ac3;
 }
 
 .big-stat {
   font-size: 2.1rem;
-  color: #0e685c;
+  color: #545b89;
   font-weight: 700;
 }
 
 .alert {
-  border-color: #efb188;
-  background: #fff4ec;
+  border-color: #949ac37a;
+  background: #a7add03d;
 }
 
 .chart {
@@ -247,9 +243,9 @@ body {
 }
 
 .fold-tab {
-  border: 1px solid #bfd4cf;
-  background: #f3fbf8;
-  color: #2e4b47;
+  border: 1px solid #949ac380;
+  background: #eef0f8;
+  color: #4d547f;
   border-radius: 999px;
   padding: 0.42rem 0.85rem;
   font: inherit;
@@ -258,9 +254,9 @@ body {
 }
 
 .fold-tab.is-active {
-  background: linear-gradient(135deg, #0f7c6e, #149987);
-  color: #f6fffd;
-  border-color: #0f7c6e;
+  background: #7f82b7;
+  color: #f8f9ff;
+  border-color: #7f82b7;
 }
 
 .fold-panel {
@@ -279,13 +275,13 @@ table {
 th,
 td {
   padding: 0.66rem;
-  border-bottom: 1px solid #e5eeeb;
+  border-bottom: 1px solid #949ac34d;
   text-align: left;
   font-size: 0.94rem;
 }
 
 th {
-  color: #30514d;
+  color: #4f567f;
   font-weight: 700;
 }
 
@@ -298,12 +294,12 @@ th {
   display: grid;
   gap: 0.34rem;
   font-weight: 600;
-  color: #2f4442;
+  color: #4f567f;
 }
 
 .predict-form input,
 .predict-form select {
-  border: 1px solid #c8d7d3;
+  border: 1px solid #cfd3e5;
   border-radius: 10px;
   padding: 0.6rem 0.65rem;
   font: inherit;
@@ -313,8 +309,8 @@ th {
 
 .predict-form input:focus,
 .predict-form select:focus {
-  outline: 2px solid #9ad8cb;
-  border-color: #77c4b4;
+  outline: 2px solid #7f82b755;
+  border-color: #7f82b7;
 }
 
 .probability-bars {
@@ -333,23 +329,23 @@ th {
 
 .prob-track {
   height: 10px;
-  background: #e5efec;
+  background: #d6daeb;
   border-radius: 99px;
   overflow: hidden;
 }
 
 .prob-fill {
   height: 100%;
-  background: linear-gradient(90deg, #20a996, #117d70);
+  background: #7f82b7;
 }
 
 .input-preview {
   margin-top: 0.9rem;
-  background: #f2f9f6;
-  border: 1px dashed #bad7cf;
+  background: #f0f2fb;
+  border: 1px dashed #949ac380;
   border-radius: 12px;
   padding: 0.7rem;
-  color: #32514d;
+  color: #4f567f;
   font-size: 0.85rem;
   white-space: pre-wrap;
 }
@@ -357,7 +353,7 @@ th {
 .site-footer {
   width: min(1100px, calc(100% - 2rem));
   margin: 0 auto 1.2rem;
-  color: #55726e;
+  color: #59608a;
   font-size: 0.88rem;
 }
 
