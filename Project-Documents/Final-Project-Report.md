@@ -3,7 +3,7 @@
 ## Overview
 
 This project predicts whether a selected clothing size will fit as `small`, `fit`, or `large`
-using customer review data from ModClothy. The final submission workflow
+using customer review data from ModCloth. The final submission workflow
 compares three predictors on the exact same row-aligned cold-start splits:
 
 - a manual NumPy MLP
