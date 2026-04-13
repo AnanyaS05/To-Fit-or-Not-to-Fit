@@ -1,5 +1,7 @@
 Data/*
 !Data/demo_brand_sizing.csv
+!Data/test_new.csv
+!Data/train_new.csv
 .venv/
 artifacts/
 __pycache__/
