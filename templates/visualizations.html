@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Visualizations | To Fit or Not to Fit{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<section class="card slide-up">
+  <p class="eyebrow">Interactive Model Context</p>
+  <h1>Bayesian And MLP Visualizations</h1>
+  <p>
+    This page visualizes both model families: Bayesian categorical logistic regression and the
+    frontend MLP-style classifier, including fold-level behavior, summary metrics, per-class F1,
+    and confusion matrices.
+  </p>
+</section>
+
+{% if startup_error %}
+<section class="card alert">
+  <h2>Data/Model Startup Issue</h2>
+  <p>{{ startup_error }}</p>
+</section>
+{% endif %}
+
+<section class="grid two-col">
+  <article class="card">
+    <h2>Bayesian CV Metrics By Fold</h2>
+    <div id="cv-chart" class="chart"></div>
+  </article>
+
+  <article class="card">
+    <h2>Train Class Distribution</h2>
+    <div id="class-dist-chart" class="chart"></div>
+  </article>
+</section>
+
+<section class="grid two-col">
+  <article class="card">
+    <h2>Bayesian Test Summary Metrics</h2>
+    <div id="bayes-summary-chart" class="chart"></div>
+  </article>
+
+  <article class="card">
+    <h2>MLP Test Summary Metrics</h2>
+    <div id="mlp-summary-chart" class="chart"></div>
+  </article>
+</section>
+
+<section class="grid two-col">
+  <article class="card">
+    <h2>Bayesian Per-Class F1</h2>
+    <div id="bayes-per-class-chart" class="chart"></div>
+  </article>
+
+  <article class="card">
+    <h2>MLP Per-Class F1</h2>
+    <div id="mlp-per-class-chart" class="chart"></div>
+  </article>
+</section>
+
+<section class="grid two-col">
+  <article class="card">
+    <h2>Bayesian Confusion Matrix</h2>
+    <div id="bayes-cm-chart" class="chart"></div>
+  </article>
+
+  <article class="card">
+    <h2>MLP Confusion Matrix</h2>
+    <div id="mlp-cm-chart" class="chart"></div>
+  </article>
+</section>
+
+<section class="card">
+  <h2>Bayesian Vs MLP Comparison</h2>
+  <div id="model-compare-chart" class="chart"></div>
+  <div class="table-wrap">
+    <table id="model-compare-table">
+      <thead>
+        <tr>
+          <th>Metric</th>
+          <th>Bayesian</th>
+          <th>MLP</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Fold-Level Scores</h2>
+  <p>Each fold-level score shows how stable model performance is across different train/validation splits.</p>
+
+  <div class="fold-tabs" role="tablist" aria-label="Fold score model tabs">
+    <button
+      type="button"
+      class="fold-tab is-active"
+      data-tab-target="bayesian"
+      role="tab"
+      aria-selected="true"
+    >
+      Bayesian
+    </button>
+    <button
+      type="button"
+      class="fold-tab"
+      data-tab-target="mlp"
+      role="tab"
+      aria-selected="false"
+    >
+      MLP
+    </button>
+  </div>
+
+  <div class="fold-panel is-active" data-tab-panel="bayesian" role="tabpanel">
+    <div class="table-wrap">
+      <table id="bayes-cv-table">
+        <thead>
+          <tr>
+            <th>Fold</th>
+            <th>Accuracy</th>
+            <th>Macro Precision</th>
+            <th>Macro Recall</th>
+            <th>Macro F1</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="fold-panel" data-tab-panel="mlp" role="tabpanel" hidden>
+    <div class="table-wrap">
+      <table id="mlp-cv-table">
+        <thead>
+          <tr>
+            <th>Fold</th>
+            <th>Accuracy</th>
+            <th>Macro Precision</th>
+            <th>Macro Recall</th>
+            <th>Macro F1</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<script id="cv-rows-json" type="application/json">{{ cv_rows | tojson }}</script>
+<script id="mlp-cv-rows-json" type="application/json">{{ mlp_cv_rows | tojson }}</script>
+<script id="train-dist-json" type="application/json">{{ train_distribution | tojson }}</script>
+<script id="bayes-summary-json" type="application/json">{{ (bayesian_artifacts or {}).get('summary', {}) | tojson }}</script>
+<script id="bayes-per-class-json" type="application/json">{{ (bayesian_artifacts or {}).get('per_class', []) | tojson }}</script>
+<script id="bayes-confusion-json" type="application/json">{{ (bayesian_artifacts or {}).get('confusion', {}) | tojson }}</script>
+<script id="mlp-summary-json" type="application/json">{{ (mlp_artifacts or {}).get('summary', {}) | tojson }}</script>
+<script id="mlp-per-class-json" type="application/json">{{ (mlp_artifacts or {}).get('per_class', []) | tojson }}</script>
+<script id="mlp-confusion-json" type="application/json">{{ (mlp_artifacts or {}).get('confusion', {}) | tojson }}</script>
+<script id="model-compare-json" type="application/json">{{ model_compare_rows | tojson }}</script>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  window.ToFitApp.renderVisualizationPage();
+</script>
+{% endblock %}

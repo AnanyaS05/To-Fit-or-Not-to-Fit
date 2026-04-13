@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}To Fit or Not to Fit{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Fraunces:opsz,wght@9..144,600;9..144,800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+    {% block extra_head %}{% endblock %}
+  </head>
+  <body>
+    <div class="ambient ambient-a"></div>
+    <div class="ambient ambient-b"></div>
+
+    <header class="site-header">
+      <a class="brand" href="{{ url_for('landing_page') }}">To Fit or Not to Fit</a>
+      <nav class="site-nav">
+        <a href="{{ url_for('landing_page') }}">Home</a>
+        <a href="{{ url_for('visualization_page') }}">Visualizations</a>
+        <a href="{{ url_for('predict_page') }}">Predict Fit</a>
+      </nav>
+    </header>
+
+    <main class="page-shell">{% block content %}{% endblock %}</main>
+
+    <footer class="site-footer">
+      <p>
+        Created by Manika Sakulsureeyadej and Ananya Saggi.
+        DS 4420, Northeastern University.
+      </p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+    {% block page_scripts %}{% endblock %}
+  </body>
+</html>

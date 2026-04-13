@@ -34,6 +34,20 @@ Environment setup:
 python -m pip install -r requirements.txt
 ```
 
+Frontend app:
+
+```powershell
+python app.py
+```
+
+Then open `http://127.0.0.1:5000`.
+
+The frontend provides:
+
+- Landing page with project summary and model metrics
+- Interactive visualization page with Bayesian CV fold metrics and class distribution
+- Prediction page where users enter measurements and choose `XS/S/M/L/XL` for a `small/fit/large` prediction
+
 R setup:
 
 - install `brms`, `rstan`, and `jsonlite`
