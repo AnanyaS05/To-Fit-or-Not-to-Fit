@@ -3,6 +3,5 @@ Data/*
 !Data/test_new.csv
 !Data/train_new.csv
 .venv/
-artifacts/
 __pycache__/
 *.pyc

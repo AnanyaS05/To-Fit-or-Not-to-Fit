@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,10 @@ CATEGORY_LABEL_MAP = {0: "tops", 1: "dresses"}
 DEMO_SIZE_FILENAMES = ["demo_fit.csv", "demo_brand_sizing.csv"]
 ALLOWED_GARMENT_TYPES = {"tops", "dresses"}
 MLP_TEST_ACCURACY_OVERRIDE = 0.5005  # 50.05%
+ARTIFACT_SCHEMA_VERSION = 1
+PERSIST_DIR = ROOT_DIR / "artifacts" / "frontend"
+MODEL_ARTIFACT_PATH = PERSIST_DIR / "frontend_softmax_mlp.npz"
+MLP_CV_ARTIFACT_PATH = PERSIST_DIR / "frontend_mlp_cv_rows.json"
 
 # Matches the ordinal mapping used in the EDA encoding step.
 CUP_LETTER_TO_CODE = {
@@ -98,6 +103,91 @@ class SoftmaxFitModel:
         probs = self.predict_proba(x)
         pred_idx = np.argmax(probs, axis=1)
         return self.classes[pred_idx]
+
+
+def build_train_signature(train_df: pd.DataFrame, source_path: Path) -> dict[str, Any]:
+    frame = train_df[FEATURE_COLS + [TARGET_COL]]
+    frame_hash = int(pd.util.hash_pandas_object(frame, index=True).sum())
+
+    return {
+        "schema_version": ARTIFACT_SCHEMA_VERSION,
+        "source": source_path.name,
+        "rows": int(len(train_df)),
+        "feature_cols": FEATURE_COLS,
+        "target_col": TARGET_COL,
+        "frame_hash": frame_hash,
+    }
+
+
+def try_load_persisted_model(expected_signature: dict[str, Any]) -> SoftmaxFitModel | None:
+    if not MODEL_ARTIFACT_PATH.exists():
+        return None
+
+    try:
+        with np.load(MODEL_ARTIFACT_PATH, allow_pickle=False) as artifact:
+            signature_raw = artifact["signature"].item()
+            stored_signature = json.loads(str(signature_raw))
+            if stored_signature != expected_signature:
+                return None
+
+            model = SoftmaxFitModel()
+            model.classes = np.asarray(artifact["classes"], dtype=np.int64)
+            model.mu = np.asarray(artifact["mu"], dtype=np.float64)
+            model.sigma = np.asarray(artifact["sigma"], dtype=np.float64)
+            model.weights = np.asarray(artifact["weights"], dtype=np.float64)
+            return model
+    except Exception:
+        return None
+
+
+def save_persisted_model(model: SoftmaxFitModel, signature: dict[str, Any]) -> bool:
+    if model.classes is None or model.mu is None or model.sigma is None or model.weights is None:
+        return False
+
+    try:
+        PERSIST_DIR.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(
+            MODEL_ARTIFACT_PATH,
+            classes=np.asarray(model.classes, dtype=np.int64),
+            mu=np.asarray(model.mu, dtype=np.float64),
+            sigma=np.asarray(model.sigma, dtype=np.float64),
+            weights=np.asarray(model.weights, dtype=np.float64),
+            signature=np.array(json.dumps(signature, sort_keys=True), dtype=np.str_),
+        )
+        return True
+    except Exception:
+        return False
+
+
+def try_load_mlp_cv_cache(expected_signature: dict[str, Any]) -> list[dict[str, Any]] | None:
+    if not MLP_CV_ARTIFACT_PATH.exists():
+        return None
+
+    try:
+        payload = json.loads(MLP_CV_ARTIFACT_PATH.read_text(encoding="utf-8"))
+        if payload.get("signature") != expected_signature:
+            return None
+
+        rows = payload.get("rows")
+        if not isinstance(rows, list):
+            return None
+        return rows
+    except Exception:
+        return None
+
+
+def save_mlp_cv_cache(rows: list[dict[str, Any]], signature: dict[str, Any]) -> bool:
+    try:
+        PERSIST_DIR.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "schema_version": ARTIFACT_SCHEMA_VERSION,
+            "signature": signature,
+            "rows": rows,
+        }
+        MLP_CV_ARTIFACT_PATH.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        return True
+    except Exception:
+        return False
 
 
 def class_name(class_value: int) -> str:
@@ -494,13 +584,23 @@ def load_demo_size_chart() -> tuple[list[dict[str, Any]], str]:
 
 
 def bootstrap_state() -> dict[str, Any]:
-    train_df = load_model_frame(DATA_DIR / "train_new.csv")
+    train_csv_path = DATA_DIR / "train_new.csv"
+    train_df = load_model_frame(train_csv_path)
+    train_signature = build_train_signature(train_df, train_csv_path)
 
-    model = SoftmaxFitModel()
     x_train = train_df[FEATURE_COLS].to_numpy(dtype=np.float64)
     y_train = train_df[TARGET_COL].to_numpy(dtype=np.int64)
-    class_values = np.sort(np.unique(y_train))
-    model.fit(x_train, y_train)
+    model = try_load_persisted_model(train_signature)
+    model_loaded_from_disk = model is not None
+    if model is None:
+        model = SoftmaxFitModel()
+        model.fit(x_train, y_train)
+        save_persisted_model(model, train_signature)
+
+    class_values = np.asarray(
+        model.classes if model.classes is not None else np.sort(np.unique(y_train)),
+        dtype=np.int64,
+    )
 
     train_pred = model.predict(x_train)
     train_acc = float(np.mean(train_pred == y_train))
@@ -536,7 +636,11 @@ def bootstrap_state() -> dict[str, Any]:
 
     size_anchor_by_category, global_size_anchors = build_size_anchor_map(train_df)
     category_defaults, global_defaults = build_category_defaults(train_df)
-    mlp_cv_rows = compute_mlp_cv_metrics(train_df)
+    mlp_cv_rows = try_load_mlp_cv_cache(train_signature)
+    mlp_cv_loaded_from_disk = mlp_cv_rows is not None
+    if mlp_cv_rows is None:
+        mlp_cv_rows = compute_mlp_cv_metrics(train_df)
+        save_mlp_cv_cache(mlp_cv_rows, train_signature)
 
     train_dist_df = (
         train_df.groupby(TARGET_COL)
@@ -583,6 +687,12 @@ def bootstrap_state() -> dict[str, Any]:
         "mlp_artifacts": mlp_artifacts,
         "bayesian_artifacts": bayesian_artifacts,
         "model_compare_rows": model_compare_rows,
+        "persistence": {
+            "model_artifact": str(MODEL_ARTIFACT_PATH.relative_to(ROOT_DIR)),
+            "model_loaded_from_disk": bool(model_loaded_from_disk),
+            "mlp_cv_artifact": str(MLP_CV_ARTIFACT_PATH.relative_to(ROOT_DIR)),
+            "mlp_cv_loaded_from_disk": bool(mlp_cv_loaded_from_disk),
+        },
     }
 
 
