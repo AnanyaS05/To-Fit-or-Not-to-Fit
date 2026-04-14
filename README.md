@@ -34,6 +34,11 @@ Environment setup:
 python -m pip install -r requirements.txt
 ```
 
+Render deployment note:
+
+- This repo includes `runtime.txt` with `python-3.12.7` to avoid building `pandas` from source on unsupported newer runtimes.
+- If your Render service was previously using Python 3.14, trigger a fresh deploy after pulling the latest changes.
+
 Frontend app:
 
 ```powershell

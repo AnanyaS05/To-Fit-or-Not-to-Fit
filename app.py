@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -820,4 +821,8 @@ def api_predict() -> Any:
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Use a production WSGI server for deployment environments like Render.
+    port = int(os.environ.get("PORT", "10000"))
+    from waitress import serve
+
+    serve(app, host="0.0.0.0", port=port)
