@@ -1,0 +1,55 @@
+{
+  "rows": [
+    {
+      "fold": 1,
+      "val_accuracy": 0.4055654233274127,
+      "val_macro_f1": 0.345425041470203,
+      "val_macro_precision": 0.3851962603725902,
+      "val_macro_recall": 0.38277152878944903
+    },
+    {
+      "fold": 2,
+      "val_accuracy": 0.4073416222616933,
+      "val_macro_f1": 0.3459640545806306,
+      "val_macro_precision": 0.37882131966927957,
+      "val_macro_recall": 0.3841569022092351
+    },
+    {
+      "fold": 3,
+      "val_accuracy": 0.4158767772511848,
+      "val_macro_f1": 0.34102271156328823,
+      "val_macro_precision": 0.39548398517637356,
+      "val_macro_recall": 0.3900304771714133
+    },
+    {
+      "fold": 4,
+      "val_accuracy": 0.4048606994665086,
+      "val_macro_f1": 0.3411768062202243,
+      "val_macro_precision": 0.3760520872778938,
+      "val_macro_recall": 0.381055537684629
+    },
+    {
+      "fold": 5,
+      "val_accuracy": 0.4223013048635824,
+      "val_macro_f1": 0.347548479674946,
+      "val_macro_precision": 0.4016193975193357,
+      "val_macro_recall": 0.39671137210481894
+    }
+  ],
+  "schema_version": 1,
+  "signature": {
+    "feature_cols": [
+      "size",
+      "cup size",
+      "hips",
+      "bra size",
+      "category",
+      "height"
+    ],
+    "frame_hash": 13184297178636613018,
+    "rows": 8439,
+    "schema_version": 1,
+    "source": "train_new.csv",
+    "target_col": "fit"
+  }
+}

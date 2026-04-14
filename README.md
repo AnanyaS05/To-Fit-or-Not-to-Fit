@@ -48,6 +48,12 @@ The frontend provides:
 - Interactive visualization page with Bayesian CV fold metrics and class distribution
 - Prediction page where users enter measurements and choose `XS/S/M/L/XL` for a `small/fit/large` prediction
 
+Frontend model persistence:
+
+- The startup MLP is cached to `artifacts/frontend/frontend_softmax_mlp.npz`.
+- Cached MLP fold-level CV metrics are stored in `artifacts/frontend/frontend_mlp_cv_rows.json`.
+- Cache is automatically reused when `Data/train_new.csv` content matches the saved signature; otherwise it retrains/rebuilds and refreshes the artifacts.
+
 R setup:
 
 - install `brms`, `rstan`, and `jsonlite`
