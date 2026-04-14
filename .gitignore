@@ -1,7 +1,4 @@
-Data/*
-!Data/demo_brand_sizing.csv
-!Data/test_new.csv
-!Data/train_new.csv
+Data/*.json
 .venv/
 __pycache__/
 *.pyc

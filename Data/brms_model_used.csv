@@ -1,0 +1,2 @@
+"model","formula","family"
+"categorical_numeric_main_effects","fit ~ size + cup_size + hips + bra_size + category + height","categorical(logit)"
