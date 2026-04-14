@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Home | To Fit or Not to Fit{% endblock %}
+
+{% block content %}
+<section class="hero card slide-up">
+  <p class="eyebrow">Northeastern Spring 2026</p>
+  <h1>Find The Right Clothing Fit Before You Buy</h1>
+  <p>
+    This project predicts whether a selected size will feel <strong>small</strong>,
+    <strong>fit</strong>, or <strong>large</strong> based on measurements and clothing metadata.
+    It combines structured feature engineering with two model families: a manual NumPy MLP
+    and a Bayesian categorical model.
+  </p>
+  <div class="hero-actions">
+    <a class="btn btn-primary" href="{{ url_for('predict_page') }}">Try Prediction</a>
+    <a class="btn btn-ghost" href="{{ url_for('visualization_page') }}">See Model Evidence</a>
+  </div>
+</section>
+
+{% if startup_error %}
+<section class="card alert">
+  <h2>Data/Model Startup Issue</h2>
+  <p>{{ startup_error }}</p>
+</section>
+{% endif %}
+
+<section class="grid two-col stagger">
+  <article class="card">
+    <h2>Method 1: Manual MLP</h2>
+    <p>
+      A neural network implemented from scratch in NumPy with custom training loops and
+      feature engineering from sizing and measurement columns.
+    </p>
+  </article>
+
+  <article class="card">
+    <h2>Method 2: Bayesian Categorical Logistic</h2>
+    <p>
+      A probabilistic multiclass model in R with interpretable uncertainty behavior and
+      cross-validation summaries.
+    </p>
+  </article>
+</section>
+
+<section class="grid two-col stagger">
+  <article class="card stat-card">
+    <h3>Training Accuracy</h3>
+    <p class="big-stat">
+      {% if metrics and metrics.train_accuracy is not none %}
+      {{ "%.3f"|format(metrics.train_accuracy) }}
+      {% else %}
+      N/A
+      {% endif %}
+    </p>
+  </article>
+
+  <article class="card stat-card">
+    <h3>Training Macro F1</h3>
+    <p class="big-stat">
+      {% if metrics and metrics.train_macro_f1 is not none %}
+      {{ "%.3f"|format(metrics.train_macro_f1) }}
+      {% else %}
+      N/A
+      {% endif %}
+    </p>
+  </article>
+
+  <article class="card stat-card">
+    <h3>Test Accuracy</h3>
+    <p class="big-stat">
+      {% if metrics and metrics.test_accuracy is not none %}
+      {{ "%.3f"|format(metrics.test_accuracy) }}
+      {% else %}
+      N/A
+      {% endif %}
+    </p>
+  </article>
+
+  <article class="card stat-card">
+    <h3>Test Macro F1</h3>
+    <p class="big-stat">
+      {% if metrics and metrics.test_macro_f1 is not none %}
+      {{ "%.3f"|format(metrics.test_macro_f1) }}
+      {% else %}
+      N/A
+      {% endif %}
+    </p>
+  </article>
+</section>
+{% endblock %}

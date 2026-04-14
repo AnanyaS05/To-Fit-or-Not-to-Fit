@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block title %}Predict Fit | To Fit or Not to Fit{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<section class="card slide-up">
+  <p class="eyebrow">Prediction Tool</p>
+  <h1>Will This Size Be Small, Fit, Or Large?</h1>
+  <p>
+    Enter your measurements and pick a size label. The app maps XS-XL into the trained size scale,
+    then predicts fit class probabilities.
+  </p>
+</section>
+
+{% if startup_error %}
+<section class="card alert">
+  <h2>Data/Model Startup Issue</h2>
+  <p>{{ startup_error }}</p>
+</section>
+{% endif %}
+
+<section class="grid two-col">
+  <article class="card">
+    <h2>Measurements</h2>
+    <form id="predict-form" class="predict-form">
+      <label>
+        Category
+        <select name="category" required>
+          {% for category in categories %}
+          <option value="{{ category.value }}">{{ category.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Size Label
+        <select name="size_label" required>
+          {% for label in size_labels %}
+          <option value="{{ label }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Hips (inches)
+        <input name="hips" type="number" step="0.1" min="20" max="80" required />
+      </label>
+
+      <label>
+        Height (inches)
+        <input name="height" type="number" step="0.1" min="48" max="84" required />
+      </label>
+
+      <label>
+        Bra Size (band size)
+        <input
+          name="bra_size"
+          type="number"
+          step="0.1"
+          min="20"
+          max="60"
+          placeholder="default {{ "%.1f"|format(defaults.bra_size) }}"
+        />
+      </label>
+
+      <label>
+        Cup Size Letter (optional)
+        <select name="cup_size_letter">
+          <option value="">Use code/default</option>
+          {% for row in cup_map_rows %}
+          <option value="{{ row.letter|lower }}">{{ row.letter }} ({{ row.code }})</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Cup Size Code (optional)
+        <input
+          name="cup_size"
+          type="number"
+          step="1"
+          min="{{ cup_range.min }}"
+          max="{{ cup_range.max }}"
+          placeholder="default {{ "%.1f"|format(defaults.cup_size) }}"
+        />
+      </label>
+
+      <button class="btn btn-primary" type="submit">Predict Fit</button>
+    </form>
+  </article>
+
+  <article class="card" id="prediction-result-card">
+    <h2>Prediction</h2>
+    <p id="prediction-summary">Submit the form to see prediction probabilities.</p>
+    <div id="probability-bars" class="probability-bars"></div>
+    <pre id="normalized-inputs" class="input-preview"></pre>
+  </article>
+</section>
+
+<section class="grid two-col">
+  <article class="card">
+    <h2>Reference Size Chart</h2>
+    <p>From {{ size_chart_source or "demo_brand_sizing.csv" }}. Hips range by garment type and size label.</p>
+    <div id="size-reference-chart" class="chart"></div>
+    <div class="table-wrap">
+      <table id="size-reference-table">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Size</th>
+            <th>Bust</th>
+            <th>Waist</th>
+            <th>Hips</th>
+            <th>Height</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </article>
+
+  <article class="card">
+    <h2>Cup Size Conversion Used By Model</h2>
+    <p>Letter labels are ordinally encoded before model training.</p>
+    <div class="table-wrap">
+      <table id="cup-map-table">
+        <thead>
+          <tr>
+            <th>Cup Letter</th>
+            <th>Numeric Code</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </article>
+</section>
+
+<script id="size-chart-json" type="application/json">{{ size_chart_rows | tojson }}</script>
+<script id="cup-map-json" type="application/json">{{ cup_map_rows | tojson }}</script>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  window.ToFitApp.wirePredictionForm();
+  window.ToFitApp.renderPredictionReferenceCharts();
+</script>
+{% endblock %}
