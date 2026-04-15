@@ -1,12 +1,9 @@
-# Faster Bayesian categorical logistic regression (brms)
-# Keeps categorical family, but uses numeric-coded predictors
-# and a simpler, more stable preprocessing pipeline
+# Bayesian Categorical Logistic Regression with brms
 
 set.seed(42)
 
-# -------------------------------
+
 # Configuration
-# -------------------------------
 train_path <- "C:/Users/anany/Desktop/Northeastern/Year4/Spring2026/To-Fit-or-Not-to-Fit/Data/train_new.csv"
 test_path  <- "C:/Users/anany/Desktop/Northeastern/Year4/Spring2026/To-Fit-or-Not-to-Fit/Data/test_new.csv"
 out_dir <- dirname(train_path)
@@ -31,9 +28,9 @@ cv_iter <- 800
 cv_warmup <- 300
 cv_refresh <- 0
 
-# -------------------------------
+
 # Package loading
-# -------------------------------
+
 required_pkgs <- c("brms", "rstan", "dplyr", "tibble")
 missing_pkgs <- required_pkgs[!vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE)]
 
@@ -55,9 +52,9 @@ cores <- min(requested_cores, max(1L, parallel::detectCores(logical = FALSE)))
 options(mc.cores = cores)
 rstan_options(auto_write = TRUE)
 
-# -------------------------------
+
 # Helpers
-# -------------------------------
+
 sanitize_name <- function(x) {
   x <- trimws(x)
   x <- gsub("[^A-Za-z0-9_]+", "_", x)
@@ -142,9 +139,9 @@ compute_metrics <- function(y_true, y_pred, class_levels) {
   list(confusion_matrix = cm, per_class = per_class, summary = summary)
 }
 
-# -------------------------------
+
 # Load data
-# -------------------------------
+
 train_df <- read.csv(train_path, stringsAsFactors = FALSE, check.names = FALSE)
 test_df  <- read.csv(test_path, stringsAsFactors = FALSE, check.names = FALSE)
 
@@ -168,9 +165,9 @@ if (length(missing_test) > 0) {
 train_df <- train_df[, model_cols, drop = FALSE]
 test_df  <- test_df[, model_cols, drop = FALSE]
 
-# -------------------------------
+
 # Type handling
-# -------------------------------
+
 # Treat predictors as numeric-coded variables, not factors
 for (col in predictor_cols) {
   train_df[[col]] <- as.numeric(train_df[[col]])
@@ -192,9 +189,9 @@ train_df <- train_df[complete.cases(train_df), , drop = FALSE]
 test_df  <- test_df[complete.cases(test_df), , drop = FALSE]
 test_df  <- test_df[!is.na(test_df[[target_col]]), , drop = FALSE]
 
-# -------------------------------
+
 # Scale numeric predictors
-# -------------------------------
+
 scale_cols <- c("size", "cup_size", "hips", "bra_size", "height")
 scale_cols <- intersect(scale_cols, predictor_cols)
 
@@ -216,9 +213,9 @@ cat("Train rows:", nrow(train_df), "\n")
 cat("Test rows:", nrow(test_df), "\n")
 cat("Class levels:", paste(class_levels, collapse = ", "), "\n")
 
-# -------------------------------
+
 # Visualizations: class distribution
-# -------------------------------
+
 png(file.path(out_dir, "brms_class_distribution.png"), width = 1200, height = 500)
 par(mfrow = c(1, 2), mar = c(5, 4, 4, 1))
 
@@ -242,9 +239,9 @@ barplot(
 
 dev.off()
 
-# -------------------------------
+
 # Main-effects categorical model
-# -------------------------------
+
 main_formula <- bf(
   fit ~ size + cup_size + hips + bra_size + category + height
 )
@@ -261,9 +258,9 @@ priors_main <- default_prior(
 cat("\nUsing priors:\n")
 print(priors_main)
 
-# -------------------------------
+
 # Stratified k-fold cross-validation
-# -------------------------------
+
 cat("\nRunning stratified ", cv_n_folds, "-fold cross-validation...\n", sep = "")
 
 cv_cores <- min(cv_requested_cores, cores)
@@ -386,9 +383,9 @@ best_fit <- brm(
   refresh = refresh
 )
 
-# -------------------------------
+
 # Test evaluation
-# -------------------------------
+
 test_pred <- predict_class_from_brms(best_fit, test_df, class_levels)
 test_metrics <- compute_metrics(test_df[[target_col]], test_pred, class_levels)
 
@@ -401,9 +398,9 @@ print(test_metrics$per_class)
 cat("\nConfusion matrix:\n")
 print(test_metrics$confusion_matrix)
 
-# -------------------------------
+
 # Visualizations: metrics and confusion matrix
-# -------------------------------
+
 summary_vec <- as.numeric(test_metrics$summary[1, c("accuracy", "macro_precision", "macro_recall", "macro_f1")])
 names(summary_vec) <- c("accuracy", "macro_precision", "macro_recall", "macro_f1")
 
@@ -464,9 +461,9 @@ for (i in seq_len(nrow(cm_plot))) {
 }
 dev.off()
 
-# -------------------------------
+
 # Save artifacts
-# -------------------------------
+
 model_summary <- tibble(
   model = "categorical_numeric_main_effects",
   formula = "fit ~ size + cup_size + hips + bra_size + category + height",
