@@ -1,129 +1,234 @@
 # To Fit or Not to Fit
 
-This repo explores clothing fit prediction on the ModCloth and Rent the Runway datasets.
+This project predicts whether a clothing item will fit as `small`, `fit`, or `large`
+from structured user measurements and product metadata. It focuses on cold-start
+settings where the app does not have prior purchase history for the user.
 
-The supported cold-start workflow now compares two standalone multiclass models on the
-same engineered data splits:
+The current codebase has three main pieces:
 
-- a manual NumPy MLP
-- a Bayesian categorical logistic regression built with `brms`/`rstan`
+- A Flask frontend for live probability-based fit predictions.
+- A manual NumPy MLP notebook used for model development and evaluation.
+- A Bayesian categorical logistic regression model in R used as an interpretable probabilistic baseline.
 
-Current project assets:
+## Current Repository Structure
 
-- `eda.ipynb`: exploratory data analysis and dataset profiling
-- `models.ipynb`: notebook experiments with neural baselines
-- `scripts/train_manual_numpy_mlp.py`: manual NumPy MLP pipeline aligned with the initial project plan
-- `scripts/train_cold_start_mlp.py`: trains the cold-start MLP and exports row-aligned split artifacts
-- `scripts/train_submission_models.py`: tunes the submission-ready MLP/Bayesian models and auto-builds the ensemble bundle
-- `scripts/train_bayesian_categorical.R`: trains the standalone Bayesian categorical classifier on the same splits
-- `scripts/build_submission_ensemble.py`: rebuilds an ensemble from saved MLP/Bayesian prediction artifacts
-- `scripts/validate_cold_start_artifacts.py`: compares the MLP, Bayesian model, and optional ensemble side by side
-- `Data/demo_brand_sizing.csv`: demo size chart for `XS` through `XL` across `tops`, `bottoms`, and `dresses`
+- `app.py`: Flask web app, live prediction API, frontend model loading/training, and visualization data wiring.
+- `src/manual_mlp.ipynb`: manual MLP implementation from scratch in NumPy, including forward pass, backpropagation, cross-validation, and final test evaluation.
+- `src/bayesian_single_model.R`: Bayesian categorical logistic regression training/evaluation with `brms` and `rstan`.
+- `src/eda.ipynb`: exploratory data analysis and preprocessing work.
+- `Data/train_new.csv`: shared training set used by the frontend model and Bayesian model.
+- `Data/test_new.csv`: shared held-out test set used for final evaluation.
+- `Data/brms_*.csv`: Bayesian CV, test summary, per-class, confusion matrix, and model metadata outputs.
+- `Data/demo_brand_sizing.csv`: reference size chart used by the prediction page.
+- `artifacts/frontend/frontend_manual_mlp.npz`: cached trained manual MLP used by the frontend.
+- `artifacts/frontend/frontend_mlp_cv_rows.json`: cached frontend MLP-style CV metrics.
+- `templates/` and `static/`: HTML, CSS, and JavaScript for the frontend.
+- `Visualizations/`: exported project figures for reports, posters, and presentations.
+- `Project-Documents/`: project planning and literature review documents.
 
-Quick start:
+## Setup
 
-```powershell
-python scripts/train_manual_numpy_mlp.py --dataset modcloth --sample-frac-modcloth 0.25 --epochs 8
-python scripts/train_manual_numpy_mlp.py --dataset renttherunway --sample-frac-rtr 0.20 --epochs 8
-python scripts/train_manual_numpy_mlp.py --dataset both --task binary_misfit --epochs 10
-```
-
-Environment setup:
+Install the Python dependencies:
 
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
-Render deployment note:
+The app is configured for Python `3.12.10` through `runtime.txt`.
 
-- This repo includes `runtime.txt` with `python-3.12.7` to avoid building `pandas` from source on unsupported newer runtimes.
-- If your Render service was previously using Python 3.14, trigger a fresh deploy after pulling the latest changes.
-
-Frontend app:
+Run the frontend locally:
 
 ```powershell
 python app.py
 ```
 
-Then open `http://127.0.0.1:5000`.
+Then open:
 
-The frontend provides:
+```text
+http://127.0.0.1:10000
+```
 
-- Landing page with project summary and model metrics
-- Interactive visualization page with Bayesian CV fold metrics and class distribution
-- Prediction page where users enter measurements and choose `XS/S/M/L/XL` for a `small/fit/large` prediction
+The Flask app uses Waitress and reads the `PORT` environment variable. If `PORT` is not set,
+it defaults to `10000`.
+
+## Frontend Prediction Method
+
+The live frontend prediction route uses the trained `ManualMLPFitModel` defined in `app.py`.
+At startup, the app loads the saved model from `artifacts/frontend/frontend_manual_mlp.npz`
+when the cache signature matches the current data and model settings. If the cache is missing
+or stale, the app trains the MLP from `Data/train_new.csv`, saves it, and then uses that saved
+model for frontend predictions.
+
+Frontend input features:
+
+```text
+size, cup size, hips, bra size, category, height
+```
+
+The prediction page lets users enter:
+
+- garment category
+- size label: `XS`, `S`, `M`, `L`, or `XL`
+- hips
+- height
+- optional bra band size
+- optional cup size letter or numeric cup code
+
+The app maps `XS/S/M/L/XL` to a numeric size value using quantiles learned from the training set,
+applies the same notebook-style MLP feature engineering, then returns probabilities for `small`,
+`fit`, and `large`.
+
+Frontend MLP feature engineering includes:
+
+- one-hot encoded categorical columns
+- numeric copies of categorical predictors
+- train-set centering/scaling for numeric predictors
+- selected interaction terms
+- selected squared terms
 
 Frontend model persistence:
 
-- The startup MLP is cached to `artifacts/frontend/frontend_softmax_mlp.npz`.
-- Cached MLP fold-level CV metrics are stored in `artifacts/frontend/frontend_mlp_cv_rows.json`.
-- Cache is automatically reused when `Data/train_new.csv` content matches the saved signature; otherwise it retrains/rebuilds and refreshes the artifacts.
+- The live frontend uses the cached trained MLP in `artifacts/frontend/frontend_manual_mlp.npz`.
+- If the training data or MLP configuration changes, the cache signature changes and the app retrains the MLP automatically.
+- The Bayesian model is still used for reporting, visualization, and comparison, not live prediction.
 
-R setup:
+## Model Labels And Encodings
 
-- install `brms`, `rstan`, and `jsonlite`
-- see [Project-Documents/R-Environment.md](/abs/path/c:/Users/anany/Desktop/Northeastern/Year4/Spring2026/To-Fit-or-Not-to-Fit/Project-Documents/R-Environment.md)
+Fit labels:
 
-Data placement:
+- `0`: `small`
+- `1`: `fit`
+- `2`: `large`
 
-- place `modcloth_final_data.json` and `renttherunway_final_data.json` under `Data/`
-- these raw files are intentionally not committed; only `Data/demo_brand_sizing.csv` is tracked
+Category labels:
 
-Cold-start comparison flow:
+- `0`: `tops`
+- `1`: `dresses`
 
-```powershell
-python scripts/train_cold_start_mlp.py --epochs 25 --hidden-dims 256 128 --dropout 0.15
-Rscript scripts/train_bayesian_categorical.R --artifact-dir artifacts/cold_start --chains 2 --iter 2000 --warmup 1000 --weighting balanced
-python scripts/validate_cold_start_artifacts.py --artifact-dir artifacts/cold_start
+Cup size letters are ordinally encoded in `app.py` using the same mapping used during preprocessing.
+
+## Manual MLP
+
+The manual MLP is implemented in `src/manual_mlp.ipynb`.
+
+Key implementation locations:
+
+- `ManualMLP` class: model initialization, forward pass, backpropagation, and parameter updates.
+- `train_mlp(...)`: minibatch training loop with validation tracking and early stopping.
+- `stratified_kfold_indices(...)`: stratified cross-validation split creation.
+- `fit_fixed_epochs(...)`: final training loop after selecting the fixed configuration.
+
+The notebook MLP is built from scratch using NumPy. It uses dense layers, ReLU hidden activations,
+softmax output probabilities, cross-entropy loss, and Adam-style parameter updates.
+
+Final notebook MLP test results:
+
+- accuracy: `0.5005`
+- macro-F1: `0.4555`
+- small F1: `0.4213`
+- fit F1: `0.6167`
+- large F1: `0.3283`
+
+## Bayesian Model
+
+The Bayesian model is implemented in `src/bayesian_single_model.R`.
+
+Model formula:
+
+```r
+fit ~ size + cup_size + hips + bra_size + category + height
 ```
 
-Faster development run:
+Model family:
 
-```powershell
-python scripts/train_cold_start_mlp.py --sample-frac-modcloth 0.10 --sample-frac-rtr 0.10 --epochs 20 --hidden-dims 256 128 --dropout 0.15 --output-dir artifacts/cold_start_tuned
-Rscript scripts/train_bayesian_categorical.R --artifact-dir artifacts/cold_start_tuned --chains 2 --iter 500 --warmup 250 --weighting balanced
-python scripts/validate_cold_start_artifacts.py --artifact-dir artifacts/cold_start_tuned
+```r
+categorical(link = "logit")
 ```
 
-Submission orchestration flow:
+The script:
 
-```powershell
-python scripts/train_submission_models.py --profile quick --artifact-dir artifacts/submission_final --sample-frac-modcloth 0.10 --sample-frac-rtr 0.10 --rscript "C:\Program Files\R\R-4.5.2\bin\Rscript.exe"
-python scripts/build_submission_ensemble.py --artifact-dir artifacts/submission_final
-python scripts/validate_cold_start_artifacts.py --artifact-dir artifacts/submission_final
+- loads `Data/train_new.csv` and `Data/test_new.csv`
+- scales numeric predictors using training-set statistics
+- treats `fit` as a categorical target
+- runs stratified five-fold cross-validation
+- trains a final Bayesian categorical logistic regression on the full training set
+- predicts test labels from posterior expected class probabilities using `posterior_epred`
+- writes Bayesian metrics and plots to `Data/`
+
+Final Bayesian test results:
+
+- accuracy: `0.4455`
+- macro-F1: `0.3469`
+- small F1: `0.1308`
+- fit F1: `0.6037`
+- large F1: `0.3061`
+
+R dependencies are installed separately from Python:
+
+```r
+install.packages(c("brms", "rstan", "dplyr", "tibble"))
 ```
 
-Official local submission bundle:
+To rerun the Bayesian model:
 
-- artifact directory: `artifacts/submission_final`
-- report summary: `artifacts/submission_final/submission_summary.json`
-- comparison report: `artifacts/submission_final/comparison_report.json`
-- final writeup: `Project-Documents/Final-Project-Report.md`
+```powershell
+Rscript src\bayesian_single_model.R
+```
 
-What the manual script does:
+Note: `src/bayesian_single_model.R` currently defines `train_path` and `test_path` near the top of
+the file. If the repo is moved to a different local path, update those paths before rerunning.
 
-- loads and cleans the raw JSONL data
-- builds train/validation/test splits
-- imputes and standardizes numeric features
-- one-hot encodes categorical features
-- trains a manual MLP in NumPy with ReLU, dropout, Adam, class weighting, and early stopping
-- reports test accuracy, macro-F1, and a confusion matrix
+## Visualizations
 
-What the cold-start comparison flow does:
+Saved visualization images are in `Visualizations/`.
 
-- uses ModCloth and Rent the Runway reviews that can be mapped into `tops`, `bottoms`, and `dresses`
-- maps raw numeric source sizes into demo labels `XS`, `S`, `M`, `L`, and `XL`
-- joins reviews to the demo size chart and converts measurements into gaps from the selected size
-- trains a from-scratch NumPy MLP to predict `small`, `fit`, or `large`
-- exports stable `train`, `calibration`, and `test` CSV splits with `row_id` so every model is evaluated on the exact same rows
-- trains a standalone Bayesian categorical logistic regression on the `train` split only
-- writes per-row Bayesian class probabilities for the `calibration` and `test` splits
-- optionally blends saved MLP and Bayesian probabilities into an ensemble on the same row-aligned splits
-- compares MLP, Bayesian, and optional ensemble performance side by side, using test macro-F1 as the primary winner metric
+Current static figures include:
 
-Notes:
+- Bayesian confusion matrix
+- Bayesian test summary metrics
+- Bayesian per-class F1
+- Bayesian CV metrics
+- MLP confusion matrix
+- Bayesian vs MLP test metric comparison
+- Bayesian vs MLP CV metric comparison
+- train/test class distribution
 
-- The MLP model code uses NumPy/Pandas and local metrics instead of pre-built ML models.
-- R requires `brms`, `rstan`, and `jsonlite`, plus a working Rtools toolchain on Windows.
-- Quick R verification: `Rscript -e "library(rstan); library(brms); cat(Sys.which('make'), Sys.which('g++'), sep='\n')"`
-- The full Bayesian run should use more iterations than the fast development run. If `rstan` reports low ESS or high R-hat, increase `--iter` and `--warmup`.
+The frontend also renders interactive charts from the saved CSV/JSON artifacts.
+
+## Data Notes
+
+The app and final model comparison use:
+
+- `Data/train_new.csv`
+- `Data/test_new.csv`
+
+These files contain the cleaned numeric modeling columns:
+
+```text
+size, cup size, hips, bra size, category, height, fit
+```
+
+The raw ModCloth and Rent the Runway JSON files are large and ignored by Git through:
+
+```text
+Data/*.json
+```
+
+If you need to rerun EDA from raw data, place the raw JSON files under `Data/` locally.
+
+## Deployment Notes
+
+- `runtime.txt` pins Python to `3.12.10`.
+- `requirements.txt` contains the Python packages needed for the Flask app.
+- The production entrypoint is still `python app.py`; Waitress serves the Flask app.
+- On Render or similar services, make sure the app has access to `Data/train_new.csv`,
+  `Data/test_new.csv`, and the required Bayesian metric CSVs if you want the visualization page
+  to show the saved Bayesian comparison.
+
+## Main Takeaways
+
+- Structured measurements can predict clothing fit better than random guessing, even without prior user history.
+- The manual MLP achieved the strongest reported notebook test performance.
+- The Bayesian model is less accurate overall but gives an interpretable probabilistic baseline.
+- Both model families perform best on the `fit` class and struggle more with `small` and `large`.
+- The frontend turns the modeling work into a real-time fit prediction demo with class probabilities.

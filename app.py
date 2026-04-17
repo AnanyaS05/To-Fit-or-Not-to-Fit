@@ -21,10 +21,26 @@ CATEGORY_LABEL_MAP = {0: "tops", 1: "dresses"}
 DEMO_SIZE_FILENAMES = ["demo_fit.csv", "demo_brand_sizing.csv"]
 ALLOWED_GARMENT_TYPES = {"tops", "dresses"}
 MLP_TEST_ACCURACY_OVERRIDE = 0.5005  # 50.05%
-ARTIFACT_SCHEMA_VERSION = 1
+ARTIFACT_SCHEMA_VERSION = 3
 PERSIST_DIR = ROOT_DIR / "artifacts" / "frontend"
-MODEL_ARTIFACT_PATH = PERSIST_DIR / "frontend_softmax_mlp.npz"
+MODEL_ARTIFACT_PATH = PERSIST_DIR / "frontend_manual_mlp.npz"
 MLP_CV_ARTIFACT_PATH = PERSIST_DIR / "frontend_mlp_cv_rows.json"
+MLP_RAW_FEATURE_COLS = FEATURE_COLS
+MLP_CATEGORICAL_COLS = ["size", "cup size", "bra size", "category"]
+MLP_INTERACTION_PAIRS = [
+    ("hips", "height"),
+    ("hips", "bra size__num"),
+    ("size__num", "bra size__num"),
+    ("size__num", "cup size__num"),
+    ("bra size__num", "cup size__num"),
+]
+MLP_SQUARED_COLS = ["hips", "height", "size__num", "bra size__num", "cup size__num"]
+MLP_HIDDEN_DIMS = (128, 64)
+MLP_EPOCHS = 10
+MLP_BATCH_SIZE = 64
+MLP_LEARNING_RATE = 0.003
+MLP_L2 = 5e-5
+MLP_SEED = 5013
 
 # Matches the ordinal mapping used in the EDA encoding step.
 CUP_LETTER_TO_CODE = {
@@ -43,12 +59,24 @@ CUP_LETTER_TO_CODE = {
 }
 
 
-class SoftmaxFitModel:
+class ManualMLPFitModel:
     def __init__(self) -> None:
         self.classes: np.ndarray | None = None
         self.mu: np.ndarray | None = None
         self.sigma: np.ndarray | None = None
-        self.weights: np.ndarray | None = None
+        self.weights: list[np.ndarray] = []
+        self.biases: list[np.ndarray] = []
+        self.hidden_dims: tuple[int, ...] = MLP_HIDDEN_DIMS
+        self.lr = MLP_LEARNING_RATE
+        self.l2_lambda = MLP_L2
+        self.beta1 = 0.9
+        self.beta2 = 0.999
+        self.eps = 1e-8
+        self.step = 0
+        self._mw: list[np.ndarray] = []
+        self._vw: list[np.ndarray] = []
+        self._mb: list[np.ndarray] = []
+        self._vb: list[np.ndarray] = []
 
     @staticmethod
     def _softmax(logits: np.ndarray) -> np.ndarray:
@@ -56,36 +84,150 @@ class SoftmaxFitModel:
         exp_scores = np.exp(shifted)
         return exp_scores / np.sum(exp_scores, axis=1, keepdims=True)
 
-    def fit(self, x: np.ndarray, y: np.ndarray, *, epochs: int = 700, lr: float = 0.08, l2: float = 1e-3) -> None:
-        x = np.asarray(x, dtype=np.float64)
+    def _initialize_parameters(
+        self,
+        input_dim: int,
+        output_dim: int,
+        *,
+        hidden_dims: tuple[int, ...],
+        seed: int,
+    ) -> None:
+        rng = np.random.default_rng(seed)
+        layer_dims = [input_dim, *hidden_dims, output_dim]
+
+        self.weights = []
+        self.biases = []
+        self._mw = []
+        self._vw = []
+        self._mb = []
+        self._vb = []
+        self.step = 0
+
+        for fan_in, fan_out in zip(layer_dims[:-1], layer_dims[1:]):
+            weight = rng.normal(0.0, np.sqrt(2.0 / fan_in), size=(fan_in, fan_out)).astype(np.float32)
+            bias = np.zeros((1, fan_out), dtype=np.float32)
+            self.weights.append(weight)
+            self.biases.append(bias)
+            self._mw.append(np.zeros_like(weight))
+            self._vw.append(np.zeros_like(weight))
+            self._mb.append(np.zeros_like(bias))
+            self._vb.append(np.zeros_like(bias))
+
+    def _forward(self, x: np.ndarray) -> tuple[np.ndarray, dict[str, list[np.ndarray]]]:
+        activations = [x]
+        pre_activations: list[np.ndarray] = []
+
+        layer_input = x
+        for layer in range(len(self.weights) - 1):
+            z = layer_input @ self.weights[layer] + self.biases[layer]
+            layer_input = np.maximum(0.0, z)
+            pre_activations.append(z)
+            activations.append(layer_input)
+
+        logits = layer_input @ self.weights[-1] + self.biases[-1]
+        probs = self._softmax(logits)
+        pre_activations.append(logits)
+        activations.append(probs)
+
+        return probs, {"A": activations, "Z": pre_activations}
+
+    def _backward(
+        self,
+        y_true: np.ndarray,
+        cache: dict[str, list[np.ndarray]],
+    ) -> tuple[list[np.ndarray], list[np.ndarray]]:
+        activations = cache["A"]
+        pre_activations = cache["Z"]
+        batch_size = y_true.shape[0]
+        n_layers = len(self.weights)
+
+        grad_w: list[np.ndarray] = [np.empty(0)] * n_layers
+        grad_b: list[np.ndarray] = [np.empty(0)] * n_layers
+
+        d_logits = activations[-1].copy()
+        d_logits[np.arange(batch_size), y_true] -= 1.0
+        d_logits /= batch_size
+
+        for layer in reversed(range(n_layers)):
+            a_prev = activations[layer]
+            grad_w[layer] = a_prev.T @ d_logits + (self.l2_lambda / batch_size) * self.weights[layer]
+            grad_b[layer] = np.sum(d_logits, axis=0, keepdims=True)
+
+            if layer > 0:
+                d_hidden = d_logits @ self.weights[layer].T
+                d_logits = d_hidden * (pre_activations[layer - 1] > 0)
+
+        return grad_w, grad_b
+
+    def _update(self, grad_w: list[np.ndarray], grad_b: list[np.ndarray]) -> None:
+        self.step += 1
+
+        for layer in range(len(self.weights)):
+            self._mw[layer] = self.beta1 * self._mw[layer] + (1.0 - self.beta1) * grad_w[layer]
+            self._vw[layer] = self.beta2 * self._vw[layer] + (1.0 - self.beta2) * (grad_w[layer] ** 2)
+            self._mb[layer] = self.beta1 * self._mb[layer] + (1.0 - self.beta1) * grad_b[layer]
+            self._vb[layer] = self.beta2 * self._vb[layer] + (1.0 - self.beta2) * (grad_b[layer] ** 2)
+
+            mw_hat = self._mw[layer] / (1.0 - self.beta1**self.step)
+            vw_hat = self._vw[layer] / (1.0 - self.beta2**self.step)
+            mb_hat = self._mb[layer] / (1.0 - self.beta1**self.step)
+            vb_hat = self._vb[layer] / (1.0 - self.beta2**self.step)
+
+            self.weights[layer] -= self.lr * mw_hat / (np.sqrt(vw_hat) + self.eps)
+            self.biases[layer] -= self.lr * mb_hat / (np.sqrt(vb_hat) + self.eps)
+
+    def fit(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        *,
+        epochs: int = MLP_EPOCHS,
+        batch_size: int = MLP_BATCH_SIZE,
+        lr: float = MLP_LEARNING_RATE,
+        l2: float = MLP_L2,
+        hidden_dims: tuple[int, ...] = MLP_HIDDEN_DIMS,
+        seed: int = MLP_SEED,
+    ) -> None:
+        x = np.asarray(x, dtype=np.float32)
         y = np.asarray(y, dtype=np.int64)
 
         self.classes = np.sort(np.unique(y))
-        y_idx = np.searchsorted(self.classes, y)
+        y_idx = np.searchsorted(self.classes, y).astype(np.int64)
+        self.hidden_dims = tuple(hidden_dims)
+        self.lr = float(lr)
+        self.l2_lambda = float(l2)
 
-        self.mu = x.mean(axis=0)
-        self.sigma = x.std(axis=0)
-        self.sigma[self.sigma == 0] = 1.0
+        # Feature engineering already matches the notebook pipeline, so the MLP itself
+        # should consume those engineered features directly.
+        self.mu = np.zeros(x.shape[1], dtype=np.float32)
+        self.sigma = np.ones(x.shape[1], dtype=np.float32)
 
-        x_scaled = (x - self.mu) / self.sigma
-        x_bias = np.hstack([np.ones((x_scaled.shape[0], 1), dtype=np.float64), x_scaled])
+        self._initialize_parameters(
+            input_dim=x.shape[1],
+            output_dim=len(self.classes),
+            hidden_dims=self.hidden_dims,
+            seed=seed,
+        )
 
-        n_samples, n_features = x_bias.shape
-        n_classes = len(self.classes)
-
-        y_onehot = np.eye(n_classes, dtype=np.float64)[y_idx]
-        self.weights = np.zeros((n_features, n_classes), dtype=np.float64)
-
+        rng = np.random.default_rng(seed)
+        x_scaled = x
+        n_train = x_scaled.shape[0]
         for _ in range(epochs):
-            logits = x_bias @ self.weights
-            probs = self._softmax(logits)
+            order = rng.permutation(n_train)
+            x_epoch = x_scaled[order]
+            y_epoch = y_idx[order]
 
-            grad = (x_bias.T @ (probs - y_onehot)) / n_samples
-            grad[1:, :] += l2 * self.weights[1:, :]
-            self.weights -= lr * grad
+            for start in range(0, n_train, batch_size):
+                end = start + batch_size
+                xb = x_epoch[start:end]
+                yb = y_epoch[start:end]
+
+                _, cache = self._forward(xb)
+                grad_w, grad_b = self._backward(yb, cache)
+                self._update(grad_w, grad_b)
 
     def predict_proba(self, x: np.ndarray) -> np.ndarray:
-        if self.mu is None or self.sigma is None or self.weights is None:
+        if self.mu is None or self.sigma is None or not self.weights:
             raise RuntimeError("Model must be fit before prediction.")
 
         x = np.asarray(x, dtype=np.float64)
@@ -93,9 +235,8 @@ class SoftmaxFitModel:
             x = x.reshape(1, -1)
 
         x_scaled = (x - self.mu) / self.sigma
-        x_bias = np.hstack([np.ones((x_scaled.shape[0], 1), dtype=np.float64), x_scaled])
-        logits = x_bias @ self.weights
-        return self._softmax(logits)
+        probs, _ = self._forward(x_scaled)
+        return probs
 
     def predict(self, x: np.ndarray) -> np.ndarray:
         if self.classes is None:
@@ -106,21 +247,142 @@ class SoftmaxFitModel:
         return self.classes[pred_idx]
 
 
-def build_train_signature(train_df: pd.DataFrame, source_path: Path) -> dict[str, Any]:
-    frame = train_df[FEATURE_COLS + [TARGET_COL]]
-    frame_hash = int(pd.util.hash_pandas_object(frame, index=True).sum())
+def fit_mlp_feature_preprocessor(train_df: pd.DataFrame, test_df: pd.DataFrame | None = None) -> dict[str, Any]:
+    categorical_cols = [col for col in MLP_CATEGORICAL_COLS if col in MLP_RAW_FEATURE_COLS]
+    numeric_cols = [col for col in MLP_RAW_FEATURE_COLS if col not in categorical_cols]
+
+    train_features_base = train_df[MLP_RAW_FEATURE_COLS].copy()
+    frames = [train_features_base]
+    if test_df is not None:
+        frames.append(test_df[MLP_RAW_FEATURE_COLS].copy())
+
+    numeric_aug_cols: list[str] = []
+    numeric_medians: dict[str, float] = {}
+    for col in categorical_cols:
+        train_num = pd.to_numeric(train_features_base[col], errors="coerce")
+        median_val = float(train_num.median()) if train_num.notna().any() else 0.0
+        if not np.isfinite(median_val):
+            median_val = 0.0
+        numeric_medians[col] = median_val
+        new_col = f"{col}__num"
+        numeric_aug_cols.append(new_col)
+        for frame in frames:
+            frame_num = pd.to_numeric(frame[col], errors="coerce")
+            frame[new_col] = frame_num.fillna(median_val)
+
+    for frame in frames:
+        for col in categorical_cols:
+            frame[col] = frame[col].astype(str)
+
+    combined_features = pd.concat(frames, axis=0, ignore_index=True)
+    combined_features = pd.get_dummies(combined_features, columns=categorical_cols, drop_first=False)
+
+    train_features = combined_features.iloc[: len(train_df)].copy()
+    numeric_for_scaling = [
+        col for col in [*numeric_cols, *numeric_aug_cols]
+        if col in train_features.columns
+    ]
+
+    scaling: dict[str, dict[str, float]] = {}
+    for col in numeric_for_scaling:
+        mean_value = float(train_features[col].mean())
+        std_value = float(train_features[col].std())
+        if not np.isfinite(std_value) or std_value == 0.0:
+            std_value = 1.0
+        scaling[col] = {"mean": mean_value, "std": std_value}
+        combined_features[col] = (combined_features[col] - mean_value) / std_value
+
+    for a, b in MLP_INTERACTION_PAIRS:
+        if a in combined_features.columns and b in combined_features.columns:
+            combined_features[f"{a}__x__{b}"] = combined_features[a] * combined_features[b]
+
+    for col in MLP_SQUARED_COLS:
+        if col in combined_features.columns:
+            combined_features[f"{col}__sq"] = combined_features[col] ** 2
 
     return {
+        "raw_feature_cols": list(MLP_RAW_FEATURE_COLS),
+        "categorical_cols": categorical_cols,
+        "numeric_cols": numeric_cols,
+        "numeric_aug_cols": numeric_aug_cols,
+        "numeric_medians": numeric_medians,
+        "scaling": scaling,
+        "feature_columns": combined_features.columns.tolist(),
+    }
+
+
+def transform_mlp_features(frame: pd.DataFrame, preprocessor: dict[str, Any]) -> np.ndarray:
+    raw_feature_cols = list(preprocessor["raw_feature_cols"])
+    categorical_cols = list(preprocessor["categorical_cols"])
+    numeric_medians = dict(preprocessor["numeric_medians"])
+    scaling = dict(preprocessor["scaling"])
+    feature_columns = list(preprocessor["feature_columns"])
+
+    features = frame[raw_feature_cols].copy()
+    for col in categorical_cols:
+        new_col = f"{col}__num"
+        frame_num = pd.to_numeric(features[col], errors="coerce")
+        features[new_col] = frame_num.fillna(float(numeric_medians.get(col, 0.0)))
+        features[col] = features[col].astype(str)
+
+    features = pd.get_dummies(features, columns=categorical_cols, drop_first=False)
+    features = features.reindex(columns=feature_columns, fill_value=0.0)
+
+    for col, stats in scaling.items():
+        if col in features.columns:
+            features[col] = (features[col] - float(stats["mean"])) / float(stats["std"])
+
+    for a, b in MLP_INTERACTION_PAIRS:
+        col_name = f"{a}__x__{b}"
+        if col_name in features.columns and a in features.columns and b in features.columns:
+            features[col_name] = features[a] * features[b]
+
+    for col in MLP_SQUARED_COLS:
+        sq_col = f"{col}__sq"
+        if sq_col in features.columns and col in features.columns:
+            features[sq_col] = features[col] ** 2
+
+    return features.to_numpy(dtype=np.float32)
+
+
+def build_train_signature(
+    train_df: pd.DataFrame,
+    source_path: Path,
+    test_df: pd.DataFrame | None = None,
+    test_source_path: Path | None = None,
+) -> dict[str, Any]:
+    frame = train_df[FEATURE_COLS + [TARGET_COL]]
+    frame_hash = int(pd.util.hash_pandas_object(frame, index=True).sum())
+    signature = {
         "schema_version": ARTIFACT_SCHEMA_VERSION,
+        "model_type": "manual_mlp",
         "source": source_path.name,
         "rows": int(len(train_df)),
         "feature_cols": FEATURE_COLS,
         "target_col": TARGET_COL,
         "frame_hash": frame_hash,
+        "hidden_dims": list(MLP_HIDDEN_DIMS),
+        "feature_engineering": "manual_mlp_notebook_v1",
+        "categorical_cols": MLP_CATEGORICAL_COLS,
+        "interaction_pairs": [list(pair) for pair in MLP_INTERACTION_PAIRS],
+        "squared_cols": MLP_SQUARED_COLS,
+        "epochs": MLP_EPOCHS,
+        "batch_size": MLP_BATCH_SIZE,
+        "learning_rate": MLP_LEARNING_RATE,
+        "l2": MLP_L2,
+        "seed": MLP_SEED,
     }
 
+    if test_df is not None and test_source_path is not None:
+        test_frame = test_df[FEATURE_COLS + [TARGET_COL]]
+        signature["test_source"] = test_source_path.name
+        signature["test_rows"] = int(len(test_df))
+        signature["test_frame_hash"] = int(pd.util.hash_pandas_object(test_frame, index=True).sum())
 
-def try_load_persisted_model(expected_signature: dict[str, Any]) -> SoftmaxFitModel | None:
+    return signature
+
+
+def try_load_persisted_model(expected_signature: dict[str, Any]) -> ManualMLPFitModel | None:
     if not MODEL_ARTIFACT_PATH.exists():
         return None
 
@@ -131,29 +393,47 @@ def try_load_persisted_model(expected_signature: dict[str, Any]) -> SoftmaxFitMo
             if stored_signature != expected_signature:
                 return None
 
-            model = SoftmaxFitModel()
+            model = ManualMLPFitModel()
             model.classes = np.asarray(artifact["classes"], dtype=np.int64)
             model.mu = np.asarray(artifact["mu"], dtype=np.float64)
             model.sigma = np.asarray(artifact["sigma"], dtype=np.float64)
-            model.weights = np.asarray(artifact["weights"], dtype=np.float64)
+            model.hidden_dims = tuple(int(value) for value in np.asarray(artifact["hidden_dims"], dtype=np.int64))
+            layer_count = int(np.asarray(artifact["layer_count"], dtype=np.int64).item())
+            model.weights = [
+                np.asarray(artifact[f"weight_{idx}"], dtype=np.float64)
+                for idx in range(layer_count)
+            ]
+            model.biases = [
+                np.asarray(artifact[f"bias_{idx}"], dtype=np.float64)
+                for idx in range(layer_count)
+            ]
             return model
     except Exception:
         return None
 
 
-def save_persisted_model(model: SoftmaxFitModel, signature: dict[str, Any]) -> bool:
-    if model.classes is None or model.mu is None or model.sigma is None or model.weights is None:
+def save_persisted_model(model: ManualMLPFitModel, signature: dict[str, Any]) -> bool:
+    if model.classes is None or model.mu is None or model.sigma is None or not model.weights or not model.biases:
         return False
 
     try:
         PERSIST_DIR.mkdir(parents=True, exist_ok=True)
+        model_payload: dict[str, Any] = {
+            "classes": np.asarray(model.classes, dtype=np.int64),
+            "mu": np.asarray(model.mu, dtype=np.float64),
+            "sigma": np.asarray(model.sigma, dtype=np.float64),
+            "hidden_dims": np.asarray(model.hidden_dims, dtype=np.int64),
+            "layer_count": np.array(len(model.weights), dtype=np.int64),
+            "signature": np.array(json.dumps(signature, sort_keys=True), dtype=np.str_),
+        }
+        for idx, weight in enumerate(model.weights):
+            model_payload[f"weight_{idx}"] = np.asarray(weight, dtype=np.float64)
+        for idx, bias in enumerate(model.biases):
+            model_payload[f"bias_{idx}"] = np.asarray(bias, dtype=np.float64)
+
         np.savez_compressed(
             MODEL_ARTIFACT_PATH,
-            classes=np.asarray(model.classes, dtype=np.int64),
-            mu=np.asarray(model.mu, dtype=np.float64),
-            sigma=np.asarray(model.sigma, dtype=np.float64),
-            weights=np.asarray(model.weights, dtype=np.float64),
-            signature=np.array(json.dumps(signature, sort_keys=True), dtype=np.str_),
+            **model_payload,
         )
         return True
     except Exception:
@@ -473,11 +753,12 @@ def stratified_kfold_indices(y: np.ndarray, n_splits: int = 5, seed: int = 42) -
 
 def compute_mlp_cv_metrics(
     train_df: pd.DataFrame,
+    feature_preprocessor: dict[str, Any],
     *,
     n_splits: int = 5,
     seed: int = 42,
 ) -> list[dict[str, Any]]:
-    x_all = train_df[FEATURE_COLS].to_numpy(dtype=np.float64)
+    x_all = transform_mlp_features(train_df, feature_preprocessor)
     y_all = train_df[TARGET_COL].to_numpy(dtype=np.int64)
     class_values = np.sort(np.unique(y_all))
 
@@ -485,13 +766,16 @@ def compute_mlp_cv_metrics(
     rows: list[dict[str, Any]] = []
 
     for fold_no, (tr_idx, val_idx) in enumerate(folds, start=1):
-        fold_model = SoftmaxFitModel()
+        fold_model = ManualMLPFitModel()
         fold_model.fit(
             x_all[tr_idx],
             y_all[tr_idx],
-            epochs=220,
-            lr=0.08,
-            l2=1e-3,
+            epochs=MLP_EPOCHS,
+            batch_size=MLP_BATCH_SIZE,
+            lr=MLP_LEARNING_RATE,
+            l2=MLP_L2,
+            hidden_dims=MLP_HIDDEN_DIMS,
+            seed=MLP_SEED + fold_no,
         )
 
         val_pred = fold_model.predict(x_all[val_idx])
@@ -587,15 +871,27 @@ def load_demo_size_chart() -> tuple[list[dict[str, Any]], str]:
 def bootstrap_state() -> dict[str, Any]:
     train_csv_path = DATA_DIR / "train_new.csv"
     train_df = load_model_frame(train_csv_path)
-    train_signature = build_train_signature(train_df, train_csv_path)
+    test_path = DATA_DIR / "test_new.csv"
+    test_df = load_model_frame(test_path) if test_path.exists() else None
+    feature_preprocessor = fit_mlp_feature_preprocessor(train_df, test_df)
+    train_signature = build_train_signature(train_df, train_csv_path, test_df, test_path if test_df is not None else None)
 
-    x_train = train_df[FEATURE_COLS].to_numpy(dtype=np.float64)
+    x_train = transform_mlp_features(train_df, feature_preprocessor)
     y_train = train_df[TARGET_COL].to_numpy(dtype=np.int64)
     model = try_load_persisted_model(train_signature)
     model_loaded_from_disk = model is not None
     if model is None:
-        model = SoftmaxFitModel()
-        model.fit(x_train, y_train)
+        model = ManualMLPFitModel()
+        model.fit(
+            x_train,
+            y_train,
+            epochs=MLP_EPOCHS,
+            batch_size=MLP_BATCH_SIZE,
+            lr=MLP_LEARNING_RATE,
+            l2=MLP_L2,
+            hidden_dims=MLP_HIDDEN_DIMS,
+            seed=MLP_SEED,
+        )
         save_persisted_model(model, train_signature)
 
     class_values = np.asarray(
@@ -613,10 +909,8 @@ def bootstrap_state() -> dict[str, Any]:
         "per_class": [],
         "confusion": {"x_labels": [], "y_labels": [], "matrix": []},
     }
-    test_path = DATA_DIR / "test_new.csv"
-    if test_path.exists():
-        test_df = load_model_frame(test_path)
-        x_test = test_df[FEATURE_COLS].to_numpy(dtype=np.float64)
+    if test_df is not None:
+        x_test = transform_mlp_features(test_df, feature_preprocessor)
         y_test = test_df[TARGET_COL].to_numpy(dtype=np.int64)
         test_pred = model.predict(x_test)
         mlp_artifacts = compute_classification_artifacts(y_test, test_pred, class_values)
@@ -640,7 +934,7 @@ def bootstrap_state() -> dict[str, Any]:
     mlp_cv_rows = try_load_mlp_cv_cache(train_signature)
     mlp_cv_loaded_from_disk = mlp_cv_rows is not None
     if mlp_cv_rows is None:
-        mlp_cv_rows = compute_mlp_cv_metrics(train_df)
+        mlp_cv_rows = compute_mlp_cv_metrics(train_df, feature_preprocessor)
         save_mlp_cv_cache(mlp_cv_rows, train_signature)
 
     train_dist_df = (
@@ -667,6 +961,7 @@ def bootstrap_state() -> dict[str, Any]:
 
     return {
         "model": model,
+        "feature_preprocessor": feature_preprocessor,
         "size_anchor_by_category": size_anchor_by_category,
         "global_size_anchors": global_size_anchors,
         "category_defaults": category_defaults,
@@ -789,8 +1084,22 @@ def api_predict() -> Any:
 
     size_anchor = STATE["size_anchor_by_category"].get(str(category), STATE["global_size_anchors"])
     size_value = float(size_anchor[size_label])
+    model_size_value = int(round(size_value))
+    model_cup_size = int(round(cup_size))
 
-    x = np.array([[size_value, cup_size, hips, bra_size, float(category), height]], dtype=np.float64)
+    raw_features = pd.DataFrame(
+        [
+            {
+                "size": model_size_value,
+                "cup size": model_cup_size,
+                "hips": hips,
+                "bra size": bra_size,
+                "category": category,
+                "height": height,
+            }
+        ]
+    )
+    x = transform_mlp_features(raw_features, STATE["feature_preprocessor"])
     probs = STATE["model"].predict_proba(x)[0]
     class_values = STATE["model"].classes
     pred_class = int(class_values[int(np.argmax(probs))])

@@ -2,42 +2,50 @@
   "rows": [
     {
       "fold": 1,
-      "val_accuracy": 0.4055654233274127,
-      "val_macro_f1": 0.345425041470203,
-      "val_macro_precision": 0.3851962603725902,
-      "val_macro_recall": 0.38277152878944903
+      "val_accuracy": 0.40082889283599765,
+      "val_macro_f1": 0.37788054446158664,
+      "val_macro_precision": 0.3928867554051376,
+      "val_macro_recall": 0.3877019683038318
     },
     {
       "fold": 2,
-      "val_accuracy": 0.4073416222616933,
-      "val_macro_f1": 0.3459640545806306,
-      "val_macro_precision": 0.37882131966927957,
-      "val_macro_recall": 0.3841569022092351
+      "val_accuracy": 0.4280639431616341,
+      "val_macro_f1": 0.4133770912063241,
+      "val_macro_precision": 0.41951406968689353,
+      "val_macro_recall": 0.41767820571590253
     },
     {
       "fold": 3,
-      "val_accuracy": 0.4158767772511848,
-      "val_macro_f1": 0.34102271156328823,
-      "val_macro_precision": 0.39548398517637356,
-      "val_macro_recall": 0.3900304771714133
+      "val_accuracy": 0.4164691943127962,
+      "val_macro_f1": 0.3831187507689508,
+      "val_macro_precision": 0.4057521165920304,
+      "val_macro_recall": 0.3989181308061487
     },
     {
       "fold": 4,
-      "val_accuracy": 0.4048606994665086,
-      "val_macro_f1": 0.3411768062202243,
-      "val_macro_precision": 0.3760520872778938,
-      "val_macro_recall": 0.381055537684629
+      "val_accuracy": 0.4096028452874926,
+      "val_macro_f1": 0.40251576189306476,
+      "val_macro_precision": 0.40650433222453813,
+      "val_macro_recall": 0.403141940865104
     },
     {
       "fold": 5,
-      "val_accuracy": 0.4223013048635824,
-      "val_macro_f1": 0.347548479674946,
-      "val_macro_precision": 0.4016193975193357,
-      "val_macro_recall": 0.39671137210481894
+      "val_accuracy": 0.4264531435349941,
+      "val_macro_f1": 0.4081069611493344,
+      "val_macro_precision": 0.4222352751515666,
+      "val_macro_recall": 0.4155715312836055
     }
   ],
-  "schema_version": 1,
+  "schema_version": 3,
   "signature": {
+    "batch_size": 64,
+    "categorical_cols": [
+      "size",
+      "cup size",
+      "bra size",
+      "category"
+    ],
+    "epochs": 10,
     "feature_cols": [
       "size",
       "cup size",
@@ -46,10 +54,51 @@
       "category",
       "height"
     ],
+    "feature_engineering": "manual_mlp_notebook_v1",
     "frame_hash": 13184297178636613018,
+    "hidden_dims": [
+      128,
+      64
+    ],
+    "interaction_pairs": [
+      [
+        "hips",
+        "height"
+      ],
+      [
+        "hips",
+        "bra size__num"
+      ],
+      [
+        "size__num",
+        "bra size__num"
+      ],
+      [
+        "size__num",
+        "cup size__num"
+      ],
+      [
+        "bra size__num",
+        "cup size__num"
+      ]
+    ],
+    "l2": 5e-05,
+    "learning_rate": 0.003,
+    "model_type": "manual_mlp",
     "rows": 8439,
-    "schema_version": 1,
+    "schema_version": 3,
+    "seed": 5013,
     "source": "train_new.csv",
-    "target_col": "fit"
+    "squared_cols": [
+      "hips",
+      "height",
+      "size__num",
+      "bra size__num",
+      "cup size__num"
+    ],
+    "target_col": "fit",
+    "test_frame_hash": 7738974545076480188,
+    "test_rows": 2110,
+    "test_source": "test_new.csv"
   }
 }
